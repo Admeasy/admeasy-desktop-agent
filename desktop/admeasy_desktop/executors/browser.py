@@ -93,6 +93,45 @@ class Browser:
                     await page.get_by_text(q, exact=False).first.scroll_into_view_if_needed(timeout=3000)
                 except Exception:
                     pass
+            elif op == "fill":
+                loc = page.locator(p["selector"]).first if p.get("selector") else page.locator("input,textarea").first
+                await loc.fill(str(p.get("text") or ""), timeout=8000)
+            elif op == "hover":
+                if p.get("selector"):
+                    await page.locator(p["selector"]).first.hover(timeout=8000)
+                else:
+                    await page.mouse.move(float(p.get("x", 0)), float(p.get("y", 0)))
+            elif op == "select":
+                await page.locator(p["selector"]).first.select_option(str(p.get("value") or ""), timeout=8000)
+            elif op == "wait_for":
+                sel = str(p.get("selector") or "")
+                state = str(p.get("state") or "visible")
+                await page.locator(sel).first.wait_for(state=state, timeout=int(p.get("timeout_ms") or 15000))
+            elif op == "tabs":
+                sub = p.get("subop") or "list"
+                if sub == "list":
+                    tabs = [{"index": i, "url": pg.url, "title": await pg.title()} for i, pg in enumerate(self.ctx.pages)]
+                    return {"status": "done", "result": {"tabs": tabs}}
+                if sub == "new":
+                    await self.ctx.new_page()
+                elif sub == "close" and self.ctx.pages:
+                    await self.ctx.pages[-1].close()
+                elif sub == "switch":
+                    idx = int(p.get("index") or 0)
+                    if idx < len(self.ctx.pages):
+                        await self.ctx.pages[idx].bring_to_front()
+            elif op == "pdf":
+                data = await page.pdf() if hasattr(page, "pdf") else b""
+                import base64 as b64
+
+                return {"status": "done", "result": {"pdf_b64": b64.b64encode(data).decode() if data else ""}}
+            elif op == "download":
+                with page.expect_download(timeout=int(p.get("timeout_ms") or 60000)) as dl_info:
+                    if p.get("selector"):
+                        await page.locator(p["selector"]).first.click()
+                dl = await dl_info.value
+                path = await dl.path()
+                return {"status": "done", "result": {"path": path, "suggested_filename": dl.suggested_filename}}
             await page.wait_for_timeout(400)
             st = await self.status(page)
             return {"status": st, "result": await self.snapshot(page, 8000 if op == "read" else 4000)}

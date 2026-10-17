@@ -92,6 +92,47 @@ def files(p: dict, roots) -> dict:
             return {"status": "failed", "error": "refusing to delete a shared root folder"}
         shutil.rmtree(path) if os.path.isdir(path) else os.remove(path)
         return {"status": "done", "result": {"deleted": path}}
+    if op == "stat":
+        st = os.stat(path)
+        return {
+            "status": "done",
+            "result": {
+                "path": path,
+                "dir": os.path.isdir(path),
+                "size": st.st_size,
+                "mtime": int(st.st_mtime),
+            },
+        }
+    if op == "copy":
+        dest = os.path.realpath(os.path.expanduser(str(p.get("dest") or "")))
+        if not in_roots(dest, roots):
+            return {"status": "failed", "error": "destination is outside shared folders"}
+        if os.path.isdir(path):
+            shutil.copytree(path, dest, dirs_exist_ok=bool(p.get("merge")))
+        else:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copy2(path, dest)
+        return {"status": "done", "result": {"copied": path, "dest": dest}}
+    if op == "move":
+        dest = os.path.realpath(os.path.expanduser(str(p.get("dest") or "")))
+        if not in_roots(dest, roots) or not in_roots(path, roots):
+            return {"status": "failed", "error": "path must stay inside shared folders"}
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.move(path, dest)
+        return {"status": "done", "result": {"moved": path, "dest": dest}}
+    if op == "search":
+        needle = str(p.get("query") or "").lower()
+        hits = []
+        for root, dirs, files in os.walk(path):
+            dirs[:] = [d for d in dirs if not d.startswith(".")][:50]
+            for name in files:
+                if needle in name.lower():
+                    hits.append(os.path.join(root, name))
+                if len(hits) >= 100:
+                    break
+            if len(hits) >= 100:
+                break
+        return {"status": "done", "result": {"path": path, "matches": hits}}
     return {"status": "failed", "error": f"unknown op {op}"}
 
 
@@ -103,4 +144,11 @@ def clipboard(p: dict) -> dict:
         return {"status": "done", "result": {"set": True}}
     if op == "get":
         return {"status": "done", "result": {"text": pyperclip.paste()[:8000]}}
+    if op == "clear":
+        pyperclip.copy("")
+        return {"status": "done", "result": {"cleared": True}}
+    if op == "append":
+        cur = pyperclip.paste()
+        pyperclip.copy(cur + str(p.get("text") or ""))
+        return {"status": "done", "result": {"appended": True}}
     return {"status": "failed", "error": f"unknown clipboard op {op}"}

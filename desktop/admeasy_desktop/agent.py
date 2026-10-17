@@ -19,15 +19,15 @@ from websockets.exceptions import ConnectionClosed
 from . import VERSION, permissions
 from .auth import load_secret
 from .config import Settings, platform_name, ws_url
-from .executors import screen, system
+from .executors import app_exec, cli_exec, comms_exec, ide_exec, mail_exec, messages_exec, screen, system, terminal_exec
 from .executors.browser import Browser
+from .executors import whatsapp_exec
+from .job_kinds import JOB_KINDS, TOOL_MANIFEST
 from .policy import judge
 from .results import normalize as normalize_result
 
 log = logging.getLogger("admeasy-desktop")
 APPROVAL_WAIT_S = 120
-# Job kinds the backend may send on /devices/tunnel (see admeasy-ai-assistant app/devices/tools.py).
-JOB_KINDS = frozenset({"screenshot", "open", "browser", "shell", "files", "clipboard", "cua"})
 
 
 class Agent:
@@ -51,13 +51,33 @@ class Agent:
             await self.ws.send(json.dumps(msg))
 
     def capabilities(self) -> dict:
-        return {"screen": True, "mouse_keyboard": True, "browser": "chrome-playwright", "shell": True,
-                "files": self.s.shared_folders, "clipboard": True, "approval_mode": self.s.approval_mode,
-                "keep_awake": self.s.keep_awake}
+        return {
+            "screen": True,
+            "mouse_keyboard": True,
+            "browser": "chrome-playwright",
+            "shell": True,
+            "terminal": True,
+            "cli_profiles": ["claude", "gemini", "cursor", "git"],
+            "files": self.s.shared_folders,
+            "clipboard": True,
+            "ide": ["cursor", "vscode"],
+            "messaging": True,
+            "approval_mode": self.s.approval_mode,
+            "keep_awake": self.s.keep_awake,
+            "job_kinds": sorted(JOB_KINDS),
+            "tools": TOOL_MANIFEST,
+        }
 
     async def hello(self) -> None:
-        await self.send({"type": "hello", "version": VERSION, "os_version": platform.platform(),
-                         "capabilities": self.capabilities(), "permissions": permissions.wire_snapshot()})
+        await self.send(
+            {
+                "type": "hello",
+                "version": VERSION,
+                "os_version": platform.platform(),
+                "capabilities": self.capabilities(),
+                "permissions": permissions.wire_snapshot(),
+            }
+        )
 
     # ---------- jobs ----------
     async def step(self, jid: str, text: str) -> None:
@@ -67,9 +87,16 @@ class Agent:
         aid = str(uuid.uuid4())
         fut = asyncio.get_running_loop().create_future()
         self.approvals[aid] = fut
-        await self.send({"type": "approval_request", "approval_id": aid, "job_id": jid,
-                         "action": str(kind)[:80], "summary": str(verdict.reason)[:400],
-                         "risk": str(verdict.risk)[:20]})
+        await self.send(
+            {
+                "type": "approval_request",
+                "approval_id": aid,
+                "job_id": jid,
+                "action": str(kind)[:80],
+                "summary": str(verdict.reason)[:400],
+                "risk": str(verdict.risk)[:20],
+            }
+        )
         try:
             return bool(await asyncio.wait_for(fut, APPROVAL_WAIT_S + 5))
         except asyncio.TimeoutError:
@@ -89,10 +116,19 @@ class Agent:
                 elif v.ask and not await self.ask_user(jid, kind, v):
                     res = {"status": "denied", "error": "the user did not approve this action"}
                 else:
-                    miss = permissions.missing(permissions.wire_snapshot()) if kind in ("cua", "screenshot") else []
-                    res = ({"status": "needs_permission", "error": "grant in System Settings: " + ", ".join(miss)}
-                           if miss else normalize_result(kind, await asyncio.wait_for(
-                               self.dispatch(jid, kind, p), job.get("timeout_s", 300))))
+                    snap = permissions.wire_snapshot()
+                    miss = permissions.missing_for_kind(kind, p, snap)
+                    res = (
+                        {
+                            "status": "needs_permission",
+                            "error": "grant in System Settings: " + ", ".join(miss),
+                        }
+                        if miss
+                        else normalize_result(
+                            kind,
+                            await asyncio.wait_for(self.dispatch(jid, kind, p), job.get("timeout_s", 300)),
+                        )
+                    )
         except asyncio.CancelledError:
             res = {"status": "cancelled", "error": "stopped by the user"}
         except asyncio.TimeoutError:
@@ -108,6 +144,10 @@ class Agent:
         if kind not in JOB_KINDS:
             return {"status": "failed", "error": f"unknown kind {kind}"}
         loop = asyncio.get_running_loop()
+
+        async def on_output(chunk: str) -> None:
+            await self.step(jid, chunk)
+
         if kind == "screenshot":
             return {"status": "done", "result": await loop.run_in_executor(None, screen.screenshot)}
         if kind == "cua":
@@ -130,6 +170,22 @@ class Agent:
         if kind == "shell":
             await self.step(jid, "$ " + str(p.get("command"))[:200])
             return await system.shell(p)
+        if kind == "terminal":
+            return await terminal_exec.run(p, on_output=on_output)
+        if kind == "cli":
+            return await cli_exec.run(p, on_output=on_output)
+        if kind == "app":
+            return await app_exec.run(p, on_output=on_output)
+        if kind == "ide":
+            return await loop.run_in_executor(None, ide_exec.run, p)
+        if kind == "whatsapp":
+            return await whatsapp_exec.run(p)
+        if kind == "messages":
+            return await loop.run_in_executor(None, messages_exec.run, p)
+        if kind == "comms":
+            return await loop.run_in_executor(None, comms_exec.run, p)
+        if kind == "mail":
+            return await loop.run_in_executor(None, mail_exec.run, p)
         if kind == "open":
             await self.step(jid, f"open {p.get('target')}")
             return await loop.run_in_executor(None, system.open_target, p)
@@ -179,9 +235,12 @@ class Agent:
                 await asyncio.sleep(2)  # not signed in yet: the UI enrols this computer
                 continue
             try:
-                async with websockets.connect(ws_url(self.s.backend, "/devices/tunnel"), additional_headers={
-                        "Authorization": f"Bearer {tok}", "X-Device-Id": dev}, ping_interval=20,
-                        max_size=16 * 1024 * 1024) as ws:
+                async with websockets.connect(
+                    ws_url(self.s.backend, "/devices/tunnel"),
+                    additional_headers={"Authorization": f"Bearer {tok}", "X-Device-Id": dev},
+                    ping_interval=20,
+                    max_size=16 * 1024 * 1024,
+                ) as ws:
                     self.ws, backoff = ws, 1
                     await self.hello()
                     self._notify(True, "connected")
@@ -207,6 +266,7 @@ class Agent:
                     await asyncio.sleep(60)
                 elif code in (401, 403):
                     from .auth import clear_device_secrets
+
                     clear_device_secrets()
                     self._notify(False, "sign in again (device token invalid or revoked)")
                     await asyncio.sleep(30)

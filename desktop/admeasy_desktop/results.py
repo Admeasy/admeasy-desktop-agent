@@ -23,7 +23,7 @@ def normalize(kind: str, out: dict | None) -> dict:
     elif status in ("needs_login", "needs_human", "needs_permission"):
         res["error"] = res.get("error") or status.replace("_", " ")
 
-    if status == "done" and kind == "shell":
+    if status == "done" and kind in ("shell", "terminal", "cli"):
         ec = (out.get("result") or {}).get("exit_code")
         if ec not in (0, None):
             res["status"] = "failed"

@@ -24,7 +24,7 @@ async function draw(){
     <button class="big" id="login">${s.logging_in?'Waiting for browser…':'Continue with Google'}</button><p class="mut">${s.error||''}</p>`;
     $('#login').onclick=()=>{api('login',{});setTimeout(draw,500)}; return; }
   const perms=Object.entries(s.permissions).filter(([k,v])=>typeof v==='boolean').map(([k,v])=>
-    `<div class="row"><span>${dot(v)}${k==='screen'?'Screen Recording':'Accessibility (mouse and keyboard)'}</span>${v?'<span class="mut">granted</span>':`<button class="ghost" onclick="api('open_settings',{which:'${k}'})">Grant</button>`}</div>`).join('');
+    `<div class="row"><span>${dot(v)}${k==='screen'?'Screen Recording':k==='full_disk'?'Full Disk Access (Messages, calls, notifications)':'Accessibility (mouse and keyboard)'}</span>${v?'<span class="mut">granted</span>':`<button class="ghost" onclick="api('open_settings',{which:'${k}'})">Grant</button>`}</div>`).join('');
   const devs=(s.devices||[]).map(d=>`<div class="row"><span>${dot(d.online)}${d.name} <span class="mut">${d.platform}</span></span><span class="mut">${d.online?'online':'offline'}</span></div>`).join('')||'<p class="mut">No devices yet.</p>';
   $('#app').innerHTML=`<h1>${s.email}</h1><p class="mut">This computer is ${s.online?'<b>connected</b>':'offline'} · ${s.detail||''}</p>
    <div class="card"><b>Connected devices</b>${devs}</div>

@@ -22,7 +22,8 @@ def test_hello_wire_fields():
     hello = {"type": "hello", "version": "0", "os_version": "x", "capabilities": caps,
              "permissions": wire_snapshot()}
     assert set(hello) >= {"type", "version", "os_version", "capabilities", "permissions"}
-    assert set(hello["permissions"]) <= {"screen", "accessibility"}
+    assert set(hello["permissions"]) <= {"screen", "accessibility", "full_disk"}
+    assert "job_kinds" in caps
 
 
 def test_devices_api_state_interpretation():

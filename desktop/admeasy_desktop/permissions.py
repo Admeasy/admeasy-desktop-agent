@@ -3,6 +3,7 @@ Both are granted per app bundle in System Settings > Privacy & Security, so the 
 stable code signature, or macOS asks again after every update."""
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 
@@ -11,6 +12,7 @@ SETTINGS_URLS = {
     "accessibility": "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
     "automation": "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
     "files": "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+    "full_disk": "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
 }
 
 
@@ -44,11 +46,46 @@ def open_settings(which: str) -> None:
         subprocess.Popen(["cmd", "/c", "start", "ms-settings:privacy"])
 
 
+def can_read_full_disk() -> bool:
+    """True when Messages / call history / notification DBs are readable (macOS Full Disk Access)."""
+    if sys.platform != "darwin":
+        return True
+    probes = (
+        os.path.expanduser("~/Library/Messages/chat.db"),
+        os.path.expanduser("~/Library/Group Containers/group.com.apple.usernoted/db2/db"),
+    )
+    for path in probes:
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "rb") as fh:
+                fh.read(1)
+            return True
+        except OSError:
+            return False
+    return False
+
+
 def missing(perms: dict) -> list[str]:
-    return [k for k in ("screen", "accessibility") if perms.get(k) is False]
+    return [k for k in ("screen", "accessibility", "full_disk") if perms.get(k) is False]
+
+
+def missing_for_kind(kind: str, params: dict | None, perms: dict) -> list[str]:
+    p = params or {}
+    need: list[str] = []
+    if kind in ("screenshot", "cua"):
+        need.extend(missing({k: perms.get(k) for k in ("screen", "accessibility")}))
+    if kind == "messages" or (kind == "comms" and p.get("op") in ("notifications", "calls", None)):
+        if not perms.get("full_disk"):
+            need.append("full_disk")
+    return need
 
 
 def wire_snapshot() -> dict:
-    """Permission fields sent on hello / permissions (screen + accessibility only)."""
+    """Permission fields sent on hello / permissions."""
     p = check()
-    return {"screen": bool(p.get("screen")), "accessibility": bool(p.get("accessibility"))}
+    return {
+        "screen": bool(p.get("screen")),
+        "accessibility": bool(p.get("accessibility")),
+        "full_disk": can_read_full_disk(),
+    }

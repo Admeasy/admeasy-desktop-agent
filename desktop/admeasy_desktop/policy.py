@@ -78,6 +78,45 @@ def judge(kind: str, params: dict, mode: str, roots) -> Verdict:
     if kind == "clipboard":
         return Verdict(True, ask=mode == "ask_always" and p.get("op") == "set", reason="clipboard", risk="low")
     if kind == "browser":
-        return Verdict(True, ask=mode == "ask_always" and p.get("op") in ("click", "type", "press"),
-                       reason=f"browser {p.get('op')}", risk="low")
+        op = p.get("op")
+        destructive = op in ("click", "type", "press", "fill", "select", "download")
+        sendish = op == "type" and SEND_WORDS.search(str(p.get("text") or ""))
+        return Verdict(
+            True,
+            ask=mode != "trusted" and (sendish or (mode == "ask_always" and destructive)),
+            reason=f"browser {op}",
+            risk="high" if sendish else "low",
+        )
+    if kind in ("terminal", "cli"):
+        cmd = str(p.get("command") or p.get("prompt") or p.get("data") or "")
+        if HARD_BLOCK.search(cmd):
+            return Verdict(False, reason="blocked: destructive shell pattern", risk="blocked")
+        if mode == "trusted":
+            return Verdict(True, risk="medium")
+        return Verdict(True, ask=True, reason=f"{kind} {p.get('op', 'run')}", risk="high" if RISKY_SHELL.search(cmd) else "medium")
+    if kind == "app":
+        op = p.get("op")
+        if op in ("install", "uninstall"):
+            return Verdict(True, ask=mode != "trusted", reason=f"{op} {p.get('name')}", risk="high")
+        return Verdict(True, ask=mode == "ask_always", reason=f"app {op}", risk="low")
+    if kind == "ide":
+        if p.get("op") in ("command",) and mode != "trusted":
+            return Verdict(True, ask=True, reason="ide command", risk="medium")
+        return Verdict(True, ask=mode == "ask_always", reason=f"ide {p.get('op')}", risk="low")
+    if kind == "whatsapp":
+        if p.get("op") in ("type", "click", "press") or SEND_WORDS.search(str(p.get("text") or "")):
+            return Verdict(True, ask=mode != "trusted", reason="WhatsApp send/action", risk="high")
+        return Verdict(True, ask=mode == "ask_always", reason=f"whatsapp {p.get('op')}", risk="low")
+    if kind == "messages":
+        if p.get("op") == "send":
+            return Verdict(True, ask=True, reason=f"SMS/iMessage to {p.get('to')}", risk="high")
+        return Verdict(True, ask=mode == "ask_always", reason=f"messages {p.get('op')}", risk="low")
+    if kind == "comms":
+        if p.get("op") == "continuity_call":
+            return Verdict(True, ask=True, reason=f"call {p.get('number')}", risk="high")
+        return Verdict(True, ask=mode == "ask_always", reason=f"comms {p.get('op')}", risk="low")
+    if kind == "mail":
+        if p.get("op") == "compose":
+            return Verdict(True, ask=mode != "trusted", reason="compose email", risk="high")
+        return Verdict(True, ask=mode == "ask_always", reason=f"mail {p.get('op')}", risk="low")
     return Verdict(True, risk="low")  # screenshot, login_check, verify, ...

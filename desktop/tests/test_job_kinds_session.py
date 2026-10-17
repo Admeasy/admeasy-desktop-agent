@@ -10,10 +10,11 @@ import pytest
 import websockets
 
 from admeasy_desktop import agent as agent_mod
-from admeasy_desktop.agent import JOB_KINDS
 from admeasy_desktop.config import Settings
+from admeasy_desktop.job_kinds import JOB_KINDS
 
-BACKEND_KINDS = frozenset(JOB_KINDS)
+# Full tunnel session harness (heavy); extended kinds covered in test_extended_kinds.py
+SESSION_KINDS = frozenset({"screenshot", "open", "browser", "shell", "files", "clipboard", "cua"})
 
 
 async def _session(monkeypatch, tmp_path, task_specs: list[dict], *, approval_mode: str = "trusted") -> list[dict]:
@@ -70,6 +71,7 @@ def _ci_grant_screen_permissions(monkeypatch):
     granted = {"screen": True, "accessibility": True}
     monkeypatch.setattr(agent_mod.permissions, "wire_snapshot", lambda: dict(granted))
     monkeypatch.setattr(agent_mod.permissions, "missing", lambda snap: [])
+    monkeypatch.setattr(agent_mod.permissions, "missing_for_kind", lambda kind, params, snap: [])
 
 
 @pytest.fixture(autouse=True)
@@ -98,7 +100,7 @@ def _stub_executors(monkeypatch):
     monkeypatch.setattr(pyperclip, "paste", _paste)
 
 
-@pytest.mark.parametrize("kind", sorted(BACKEND_KINDS))
+@pytest.mark.parametrize("kind", sorted(SESSION_KINDS))
 @pytest.mark.asyncio
 async def test_job_kind_twice_in_one_session(kind, monkeypatch, tmp_path):
     params: dict[str, Any]
@@ -138,8 +140,8 @@ async def test_job_kind_twice_in_one_session(kind, monkeypatch, tmp_path):
         assert base64.b64decode(results[1]["result"]["content_b64"]).decode() == "data"
 
 
-def test_all_backend_kinds_are_implemented():
-    assert BACKEND_KINDS == {"screenshot", "open", "browser", "shell", "files", "clipboard", "cua"}
+def test_session_kinds_subset_of_job_kinds():
+    assert SESSION_KINDS <= JOB_KINDS
 
 
 @pytest.mark.asyncio
