@@ -128,20 +128,22 @@ def cmd_doctor() -> int:
         line("screenshot", False, str(e))
     from . import cursor_overlay
 
-    if sys.platform == "darwin" and s.show_agent_cursor:
-        line(
-            "agent cursor overlay",
-            False,
-            "disabled on macOS (webview owns main thread); set show_agent_cursor=false in ~/.admeasy/config.json",
-        )
-    elif s.show_agent_cursor and not cursor_overlay.is_available():
-        line(
-            "agent cursor (tkinter)",
-            False,
-            "install python-tk or set show_agent_cursor=false (clicks still work)",
-        )
+    if s.show_agent_cursor and not cursor_overlay.is_available():
+        if sys.platform == "darwin":
+            line(
+                "agent cursor overlay",
+                False,
+                "pip install pyobjc-framework-Cocoa (or pip install -e '.[macos]')",
+            )
+        else:
+            line(
+                "agent cursor (tkinter)",
+                False,
+                "install python-tk or set show_agent_cursor=false (clicks still work)",
+            )
     elif s.show_agent_cursor:
-        line("agent cursor (tkinter)", True, "pink overlay available")
+        kind = "AppKit" if sys.platform == "darwin" else "tkinter"
+        line(f"agent cursor ({kind})", True, "pink overlay available")
     return 0 if ok else 1
 
 

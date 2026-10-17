@@ -13,13 +13,15 @@ pip install -U pip wheel
 pip install -r requirements.txt
 pip install -e .
 if [[ "$(uname -s)" == "Darwin" ]]; then
-  pip install 'pyobjc-framework-Quartz>=10' 'pyobjc-framework-ApplicationServices>=10' || true
+  pip install 'pyobjc-framework-Quartz>=10' 'pyobjc-framework-ApplicationServices>=10' 'pyobjc-framework-Cocoa>=10' || true
+  echo ""
+  echo "macOS: pink agent cursor uses AppKit (pyobjc-framework-Cocoa), not Tk."
+  echo "Grant Accessibility to Terminal (or your IDE) in System Settings for CUA clicks."
+elif [[ "$(uname -s)" == "Linux" ]]; then
   if ! "$PY" -c "import _tkinter" 2>/dev/null; then
     echo ""
-    echo "Note: Homebrew Python often lacks Tk. Pink agent cursor needs:"
-    echo "  brew install python-tk@3.14"
+    echo "Linux: install Tk for the pink agent cursor, e.g. sudo apt install python3-tk"
     echo "Or disable overlay: export ADMEASY_SHOW_AGENT_CURSOR=0"
-    echo "CUA clicks use pyautogui — grant Accessibility to Terminal (or your IDE) in System Settings."
   fi
 fi
 echo ""

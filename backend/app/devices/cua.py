@@ -9,6 +9,14 @@ from app.vm_vision import resolve_vm_vision, vision_complete, vision_ready
 
 log = logging.getLogger(__name__)
 
+# Desktop agent v0.4+ returns job status "ok"; legacy agents used "done".
+_JOB_OK = frozenset({"ok", "done"})
+
+
+def job_succeeded(status: str | None) -> bool:
+    return str(status or "").lower() in _JOB_OK
+
+
 # Anthropic computer-tool action names -> the desktop agent's action vocabulary (same names, normalised).
 ACTIONS = {"left_click": "click", "click": "click", "right_click": "right_click", "double_click": "double_click",
            "middle_click": "middle_click", "mouse_move": "move", "left_click_drag": "drag", "type": "type",
@@ -121,7 +129,7 @@ class ComputerUse:
             jid = await self.svc.submit(user_id, device_id, "cua", {"action": action}, conv)
             j = await self.svc.wait(jid, 90)
             status = (j or {}).get("status", "failed")
-            if status != "done":
+            if not job_succeeded(status):
                 return {"status": status, "error": (j or {}).get("error"), "steps": history}
             res = j["result"] or {}
             shot = res.get("screenshot_b64")

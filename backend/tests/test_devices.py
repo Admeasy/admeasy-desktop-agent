@@ -2,7 +2,7 @@
 import asyncio
 import json
 
-from app.devices.cua import to_action
+from app.devices.cua import job_succeeded, to_action
 from app.devices.service import DeviceService
 from app.devices.tools import DEVICE_TOOL_NAMES, DEVICE_TOOL_SCHEMAS, DeviceTools
 
@@ -59,6 +59,12 @@ def test_tool_call_strips_screenshot_from_chat_model_output():
     out = json.loads(asyncio.run(t.call("u", "device_shell", {"command": "ls"})))
     assert "screenshot_b64" not in json.dumps(out) and frames == ["AAAA"]
     assert out["device"] == "Ali's MacBook"
+
+
+def test_job_succeeded_accepts_desktop_ok_status():
+    assert job_succeeded("ok")
+    assert job_succeeded("done")
+    assert not job_succeeded("error")
 
 
 def test_to_action_maps_computer_tool_calls():
