@@ -37,6 +37,7 @@ def cmd_run(background: bool) -> None:
     s = Settings.load()
     ui = UiState(s)
     agent = Agent(s)
+    ui.agent = agent
     agent.status_cb = ui.set_status
     system_hooks.keep_awake(s.keep_awake and not s.paused)
     if s.start_at_login:

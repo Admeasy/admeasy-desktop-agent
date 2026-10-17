@@ -16,45 +16,45 @@ def agent(monkeypatch, tmp_path):
     )
     class _B:
         async def run(self, p):
-            return {"status": "done", "result": {"url": "https://example.com", "title": "t", "text": "hi"}}
+            return {"status": "ok", "result": {"url": "https://example.com", "title": "t", "text": "hi"}}
 
     monkeypatch.setattr("admeasy_desktop.agent.Browser", lambda: _B())
     async def _shell(p, cancel=None):
-        return {"status": "done", "result": {"exit_code": 0, "output": "ok"}}
+        return {"status": "ok", "result": {"exit_code": 0, "output": "ok"}}
 
     monkeypatch.setattr("admeasy_desktop.executors.system.shell", _shell)
     monkeypatch.setattr(
         "admeasy_desktop.executors.system.files",
-        lambda p, roots: {"status": "done", "result": {"path": p.get("path"), "items": []}},
+        lambda p, roots: {"status": "ok", "result": {"path": p.get("path"), "items": []}},
     )
     monkeypatch.setattr(
         "admeasy_desktop.executors.system.clipboard",
-        lambda p: {"status": "done", "result": {"text": ""}},
+        lambda p: {"status": "ok", "result": {"text": ""}},
     )
     monkeypatch.setattr(
         "admeasy_desktop.executors.system.open_target",
-        lambda p: {"status": "done", "result": {"opened": p.get("target")}},
+        lambda p: {"status": "ok", "result": {"opened": p.get("target")}},
     )
     async def _term(p, on_output=None):
-        return {"status": "done", "result": {"sessions": []}}
+        return {"status": "ok", "result": {"sessions": []}}
 
     async def _cli(p, on_output=None):
-        return {"status": "done", "result": {"profiles": ["git"]}}
+        return {"status": "ok", "result": {"profiles": ["git"]}}
 
     async def _app(p, on_output=None):
-        return {"status": "done", "result": {"opened": "x"}}
+        return {"status": "ok", "result": {"opened": "x"}}
 
     monkeypatch.setattr("admeasy_desktop.executors.terminal_exec.run", _term)
     monkeypatch.setattr("admeasy_desktop.executors.cli_exec.run", _cli)
     monkeypatch.setattr("admeasy_desktop.executors.app_exec.run", _app)
-    monkeypatch.setattr("admeasy_desktop.executors.ide_exec.run", lambda p: {"status": "done", "result": {"opened": "."}})
+    monkeypatch.setattr("admeasy_desktop.executors.ide_exec.run", lambda p: {"status": "ok", "result": {"opened": "."}})
     async def _wa(p):
-        return {"status": "done", "result": {"url": "https://web.whatsapp.com/"}}
+        return {"status": "ok", "result": {"url": "https://web.whatsapp.com/"}}
 
     monkeypatch.setattr("admeasy_desktop.executors.whatsapp_exec.run", _wa)
-    monkeypatch.setattr("admeasy_desktop.executors.messages_exec.run", lambda p: {"status": "done", "result": {"messages": []}})
-    monkeypatch.setattr("admeasy_desktop.executors.comms_exec.run", lambda p: {"status": "done", "result": {"notifications": []}})
-    monkeypatch.setattr("admeasy_desktop.executors.mail_exec.run", lambda p: {"status": "done", "result": {"unread_inbox": 0}})
+    monkeypatch.setattr("admeasy_desktop.executors.messages_exec.run", lambda p: {"status": "ok", "result": {"messages": []}})
+    monkeypatch.setattr("admeasy_desktop.executors.comms_exec.run", lambda p: {"status": "ok", "result": {"notifications": []}})
+    monkeypatch.setattr("admeasy_desktop.executors.mail_exec.run", lambda p: {"status": "ok", "result": {"unread_inbox": 0}})
     return Agent(Settings())
 
 
@@ -76,12 +76,14 @@ async def test_dispatch_all_kinds(agent, tmp_path):
         "messages": {"op": "recent", "limit": 1},
         "comms": {"op": "notifications", "limit": 1},
         "mail": {"op": "unread"},
+        "status": {"domains": []},
+        "signin": {"domain": "example.com", "timeout_s": 0.1, "poll_s": 0.05},
     }
     assert set(samples) == JOB_KINDS
     for kind, params in samples.items():
         out = await agent.dispatch(f"j-{kind}", kind, params)
-        assert out.get("status") in ("done", "failed", "needs_login", "needs_human", "needs_permission")
+        assert out.get("status") in ("ok", "error", "needs_login", "needs_human", "permission_missing", "captcha")
 
 
 def test_job_kind_count():
-    assert len(JOB_KINDS) == 15
+    assert len(JOB_KINDS) == 17

@@ -131,8 +131,8 @@ async def test_job_kind_twice_in_one_session(kind, monkeypatch, tmp_path):
     results = await _session(monkeypatch, tmp_path, specs)
     assert len(results) == 2
     assert results[0]["job_id"].startswith(kind) or kind in results[0]["job_id"]
-    assert results[0]["status"] == "done"
-    assert results[1]["status"] == "done"
+    assert results[0]["status"] == "ok"
+    assert results[1]["status"] == "ok"
     if kind == "clipboard":
         assert results[1]["result"]["text"] == "clip"
     if kind == "files":
@@ -174,4 +174,4 @@ async def test_cancel_all_cancels_queued_job(monkeypatch, tmp_path):
         tunnel.cancel()
     statuses = {m["job_id"]: m["status"] for m in got}
     assert statuses.get("queued") == "cancelled"
-    assert statuses.get("slow") in ("cancelled", "done", "failed")
+    assert statuses.get("slow") in ("cancelled", "ok", "error", "blocked")

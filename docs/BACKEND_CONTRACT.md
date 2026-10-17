@@ -2,7 +2,11 @@
 
 Canonical server implementation: **admeasy-ai-assistant** `main` (device tools in `app/devices/tools.py`). The desktop app targets that API. If `GET /devices` returns **404**, the host has not been redeployed yet; **503** means `DEVICES_ENABLED=false`.
 
-Desktop package version **0.3.2-beta** advertises **15 job kinds** (see below). The LLM picks `device_*` tools; see [COMPUTER_USE.md](COMPUTER_USE.md) and [WORKFLOW_DIAGNOSIS.md](WORKFLOW_DIAGNOSIS.md). Screenshots may include **set-of-mark** `elements[]` and `ax_tree` when accessibility is granted.
+**Contract version `0.4.0`** — desktop package **0.4.0-beta.1** advertises **17 job kinds**. Mirror copy: **admeasy-ai-assistant** `docs/DESKTOP_BACKEND_CONTRACT.md`.
+
+The LLM picks `device_*` tools (no intent routing). See [COMPUTER_USE.md](COMPUTER_USE.md) and [WORKFLOW_DIAGNOSIS.md](WORKFLOW_DIAGNOSIS.md).
+
+**v0.4 highlights:** typed result `status`, `status`/`signin` job kinds, SOM + AX (macOS + Windows UIA), Chromium extension bridge, session probe (boolean only), idempotency + reconnect buffer, artifact append/upload, `skill_hints` on jobs for failure detection (no hardcoded site lists in desktop code).
 
 ## Enablement
 
@@ -50,8 +54,8 @@ Response: `{"device_id": "uuid", "device_token": "secret-once"}`
 | `hello` | `version`, `os_version`, `capabilities`, `permissions` |
 | `permissions` | `permissions` |
 | `approval_request` | `approval_id`, `job_id`, `action`, `summary`, `risk` |
-| `step` | `job_id`, `text` (streamed progress, ≤300 chars) |
-| `result` | `job_id`, `status`, `result?`, `error?` |
+| `step` | `job_id`, `text` (≤300 chars), optional `objective_id` |
+| `result` | `job_id`, `status`, `result?`, `error?` — `result.reason`, `result.evidence.screenshot_ref` |
 
 ### Server → desktop
 
@@ -61,9 +65,21 @@ Response: `{"device_id": "uuid", "device_token": "secret-once"}`
 | `approval_result` | `approval_id`, `allow` |
 | `cancel_all` | — |
 
-### Result `status`
+### Result `status` (v0.4)
 
-`done`, `failed`, `denied`, `needs_login`, `needs_human`, `needs_permission`, `cancelled`
+`ok`, `needs_login`, `needs_human`, `offline`, `blocked`, `rate_limited`, `permission_missing`, `timeout`, `captcha`, `error`, `cancelled`
+
+Legacy `done`/`failed`/`denied` are normalized to `ok`/`error`/`blocked` on the wire. Every non-`ok` result should include `error` and `result.reason`; screenshot-bearing results include `result.evidence.screenshot_ref` = `job_id`.
+
+### Task params (all kinds)
+
+| field | purpose |
+|-------|---------|
+| `objective_id` | echoed in `result`; drives `step.objective_id` and keep-awake while jobs run |
+| `idempotency_key` | duplicate task after backend restart returns cached result (no double-act) |
+| `skill_hints` | strings from backend skills — used for captcha/login heuristics only |
+| `rate_limit_hints` | `{requests_per_minute, jitter_ms, daily_cap}` — desktop pacing |
+| `tab_pool_size` | max concurrent extension tabs (browser kind) |
 
 ### Permissions (`hello.permissions`)
 
@@ -87,9 +103,25 @@ Independent of the cloud model: hard-block destructive shell patterns; **phone a
 
 `{}` → `{screenshot_b64, size}`
 
+### `status`
+
+Surface facts for `surfaces_status` (no recommendations):
+
+```json
+{"domains": ["example.com"]}
+```
+
+Returns `online`, `os`, `agent_version`, `permissions`, `permissions_missing`, `default_browser`, `sessions` (per domain: `session_present`, `browser`, `last_seen_at` — **no cookie values**), `active_app`, `idle_seconds`, `extension_installed`, `speed_tier`, `timestamp`.
+
+### `signin`
+
+Handoff when backend `interrupt` + `needs_login`:
+
+`{domain, url?, label?, timeout_s?, poll_s?}` → polls session probe → `{session_verified, probe}`.
+
 ### `cua`
 
-`{action}` — pixel control: `screenshot`, `click`, `type`, `key`, `scroll`, `wait`, `move`, `done`, `needs_login`
+`{action, skill_hints?}` — prefer `element_id` / `click_mark` / `ax_press` / `ax_type`; fallback `x`,`y`. Returns SOM `elements[]`, `frame_id`, `stable_id`, `ax_tree`. Stops with `captcha` / `needs_human` when detected (never bypass captcha).
 
 ### `open`
 
@@ -135,11 +167,15 @@ Desktop capabilities include `objectives.echo_objective_id: true`.
 
 ### `browser`
 
-Default **`browser_automation=default_first`**: opens URL in the **system default browser** (user sessions) and returns a **screen screenshot**. DOM `click`/`type` in this mode returns `needs_human` with hint to use **`cua`**. Optional isolated Playwright profile: `params.force_playwright=true` or `params.automation=playwright_profile`.
+**Order:** Chromium **extension bridge** (user profile) if installed → **`default_first`** screen/SOM → optional **`playwright_profile`**.
+
+Extension ops: `list_tabs`, `open_tab`, `navigate`, `read_page`, `extract` (`schema`), `query_elements`, `click_element`, `type_element`, `scroll`, `wait_for`, `screenshot_tab`, `close_tab` (background tabs when possible).
+
+`default_first`: `read`/`open`/`navigate` open the **default browser** and return screen capture + SOM. DOM ops without extension return `needs_human` + `interaction` hint.
 
 | op | params |
 |----|--------|
-| `read`, `navigate`, `open` | `url`, `settle_s?` |
+| `read`, `navigate`, `open` | `url`, `settle_s?`, `domain?`, `rate_limit_hints?`, `tab_pool_size?` |
 | `click` | `selector` or `text` or `x`,`y` (playwright profile only) |
 | `type`, `fill` | `text`, `selector?` |
 | `press` | `key` |
@@ -159,6 +195,8 @@ Paths must stay under `capabilities.files` (shared folders).
 | op | params |
 |----|--------|
 | `list`, `read`, `write`, `mkdir`, `delete`, `stat`, `copy`, `move`, `search` | `path`, … |
+| `append_rows` | `path`, `rows[]`, `format`: `csv` \| `xlsx` |
+| `upload_artifact` | `path`, `upload_url` (presigned PUT from backend) |
 
 ### `clipboard`
 
@@ -217,4 +255,8 @@ Paths must stay under `capabilities.files` (shared folders).
 
 ## Capabilities (`hello.capabilities`)
 
-Includes `job_kinds`, `tools`, `browser` (`default_first` \| `playwright_profile`), `browser_modes`, `native_apps`, `agent_cursor_overlay`, `objectives`, `cli_profiles`, `ide`, `terminal`, `files`, `approval_mode`, `keep_awake`.
+Includes `contract_version`, `job_kinds` (17), `tools`, `browser`, `browser_modes` (+ `extension_bridge`), `set_of_mark`, `ax_tree`, `extension_bridge`, `native_apps`, `agent_cursor_overlay`, `objectives`, `cli_profiles`, `ide`, `terminal`, `files`, `approval_mode`, `keep_awake`.
+
+## Reconnect
+
+On tunnel drop, undelivered `result` messages are buffered under `~/.admeasy/job_store.json` and replayed on the next `hello`. Backend should reuse `idempotency_key` when resubmitting after restart.

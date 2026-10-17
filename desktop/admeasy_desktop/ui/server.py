@@ -22,6 +22,7 @@ class UiState:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.online, self.detail, self.logging_in, self.error = False, "", False, ""
+        self.agent = None
 
     def set_status(self, online: bool, detail: str) -> None:
         self.online, self.detail = online, detail
@@ -77,9 +78,30 @@ class UiState:
 
     def snapshot(self) -> dict:
         s = auth.state()
-        return {**s, "online": self.online, "detail": self.detail, "logging_in": self.logging_in, "error": self.error,
-                "permissions": permissions.check(), "settings": vars(self.settings),
-                "devices": self.devices() if s["signed_in"] else []}
+        obj = {}
+        ext = {"installed": False}
+        if self.agent:
+            obj = {
+                "objective_id": self.agent.objective_id,
+                "step": self.agent.objective_step,
+                "rows_so_far": self.agent.rows_so_far,
+                "blocker": self.agent.blocker,
+            }
+            from ..browser_bridge import extension_status
+
+            ext = extension_status()
+        return {
+            **s,
+            "online": self.online,
+            "detail": self.detail,
+            "logging_in": self.logging_in,
+            "error": self.error,
+            "permissions": permissions.check(),
+            "settings": vars(self.settings),
+            "devices": self.devices() if s["signed_in"] else [],
+            "objective": obj,
+            "extension": ext,
+        }
 
 
 def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
@@ -120,7 +142,15 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
                 state.settings.save()
                 system_hooks.keep_awake(state.settings.keep_awake and not state.settings.paused)
                 system_hooks.set_autostart(state.settings.start_at_login)
-            self._json({"ok": True})
+            elif name == "install_extension":
+                from pathlib import Path
+
+                from ..browser_bridge import install_native_host
+
+                host = Path(__file__).resolve().parents[2] / "native_host" / "admeasy_host.py"
+                browsers = install_native_host(host)
+                return self._json({"ok": True, "browsers": browsers})
+            return self._json({"ok": True})
 
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()

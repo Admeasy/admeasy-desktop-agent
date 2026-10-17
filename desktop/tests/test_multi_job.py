@@ -39,5 +39,5 @@ async def test_three_shell_jobs_in_sequence(monkeypatch, tmp_path):
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
     assert len(results) == 3
-    assert all(r["status"] == "done" for r in results)
+    assert all(r["status"] == "ok" for r in results)
     assert "job0" in results[0]["result"]["output"]

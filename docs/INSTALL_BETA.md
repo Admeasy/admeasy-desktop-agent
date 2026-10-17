@@ -1,33 +1,32 @@
-# Admeasy desktop beta (v0.3.0-beta)
+# Admeasy desktop beta (v0.4.0-beta.1)
 
-No terminal, Python, or env vars required. The app talks to the production Admeasy backend automatically.
+No terminal required. Pair with the same Google account as the Admeasy phone app.
 
-Prefer **signed** assets when present on the release page (`Admeasy-*-macos.dmg`, `Admeasy-*-windows.exe`). See [SIGNING.md](SIGNING.md) for how maintainers enable CI signing.
+Prefer **signed** release assets when listed on GitHub. Unsigned builds use `-unsigned` in the filename.
 
 ## macOS
 
-1. Download **`Admeasy-0.3.0-beta-macos.dmg`** (signed) or **`*-macos-unsigned.dmg`** from [Releases](https://github.com/Admeasy/admeasy-desktop-agent/releases).
-2. Open the DMG and drag **Admeasy** into **Applications**.
-3. **If unsigned only:** Finder → Applications → **right-click Admeasy → Open** → **Open** once.
-4. Sign in with the **same Google account** as the Admeasy phone app.
-5. Grant **Screen Recording** and **Accessibility** when asked (System Settings → Privacy & Security).
-6. Leave Admeasy running. It **starts again at login** in the background (menu-bar icon when paused/quit is available).
-
-**Browser tasks:** install [Google Chrome](https://www.google.com/chrome/) if you want `device_browser` / web opens to use Chrome.
+1. Download **`Admeasy-0.4.0-beta.1-macos.dmg`** (or `*-unsigned.dmg`) from [Releases](https://github.com/Admeasy/admeasy-desktop-agent/releases).
+2. Open the DMG → drag **Admeasy** to **Applications**.
+3. **Unsigned:** right-click **Open** once to bypass Gatekeeper.
+4. Sign in with Google; grant **Screen Recording**, **Accessibility**, and **Full Disk** if you use Messages/comms jobs.
+5. On the permissions page, use **One-click setup** to register the **browser extension** + native messaging host (Chrome / Edge / Brave).
+6. Leave the app running (auto-starts at login).
 
 ## Windows
 
-1. Download **`Admeasy-0.3.0-beta-windows.exe`** (signed) or **`*-windows-unsigned.exe`** from Releases.
-2. Run the installer. The setup installs **WebView2** if needed. If SmartScreen warns on an unsigned build: **More info → Run anyway**.
-3. Open **Admeasy** from the Start menu, sign in with Google, allow permissions if prompted.
-4. The installer registers Admeasy to **start at login** in the background (`run --background`).
+1. Download **`Admeasy-0.4.0-beta.1-windows.exe`** (or unsigned) from Releases.
+2. Run the installer (WebView2 installed if needed).
+3. Sign in, grant permissions, run extension setup from the app UI.
+4. Optional: `pip install uiautomation` is bundled in the installer build for UI Automation snapshots.
 
-Install [Google Chrome](https://www.google.com/chrome/) for best browser automation.
+## What’s new in 0.4
+
+- **Set-of-mark** clicks (`element_id`) on macOS and Windows
+- **Structured browser** via extension when installed; otherwise default browser + CUA
+- **Long-run** helpers: idempotent jobs, reconnect resume, keep-awake during objectives
+- **Artifacts:** append CSV/XLSX in `~/.admeasy` shared folders; upload via presigned URL from backend
 
 ## Phone
 
-Use the same Google account. Ask Admeasy to use **your computer** (e.g. “open Instagram on my MacBook”). Approve risky actions on the phone when prompted.
-
-## Data location
-
-Settings, tokens, and logs: `~/.admeasy/` (macOS/Linux) or `%USERPROFILE%\.admeasy\` (Windows).
+Approve sends, calls, installs, and destructive actions when prompted. The desktop has no chat UI — objectives show as step + row count in the window.

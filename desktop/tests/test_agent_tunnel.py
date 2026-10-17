@@ -60,6 +60,6 @@ async def test_task_approval_result_roundtrip(monkeypatch, tmp_path):
             pass
     assert got["hello"]["type"] == "hello" and got["hello"]["capabilities"]["mouse_keyboard"]
     assert got["approval"]["action"] == "shell" and "echo hi" in got["approval"]["summary"]
-    assert got["result"]["status"] == "done" and "hi" in got["result"]["result"]["output"]
-    assert got["blocked"]["status"] == "denied"
-    assert got["outside"]["status"] == "denied"
+    assert got["result"]["status"] == "ok" and "hi" in got["result"]["result"]["output"]
+    assert got["blocked"]["status"] == "blocked"
+    assert got["outside"]["status"] == "blocked"
