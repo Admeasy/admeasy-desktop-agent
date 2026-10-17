@@ -117,7 +117,21 @@ def cmd_doctor() -> int:
     line("devices API", api_state in ("ok", "auth_required"), api_detail)
     perms = permissions.check()
     for k in ("screen", "accessibility"):
-        line(f"permission: {k}", perms.get(k), "" if perms.get(k) else "System Settings > Privacy & Security")
+        detail = "" if perms.get(k) else "System Settings > Privacy & Security"
+        if k == "accessibility" and sys.platform == "darwin" and not perms.get(k):
+            detail = f"required for clicks/typing — enable for Admeasy.app or {sys.executable}"
+        line(f"permission: {k}", perms.get(k), detail)
+    if sys.platform == "darwin":
+        try:
+            from . import input_darwin
+
+            line(
+                "mouse/keyboard (CGEvent)",
+                input_darwin.accessibility_trusted(),
+                "same Accessibility grant as above; without it only open URL/app works",
+            )
+        except Exception as e:
+            line("mouse/keyboard (CGEvent)", False, str(e))
     chrome = shutil.which("google-chrome") or shutil.which("chrome") or sys.platform in ("darwin", "win32")
     line("Chrome (for browser control)", chrome, "install Google Chrome if browser ops fail")
     try:

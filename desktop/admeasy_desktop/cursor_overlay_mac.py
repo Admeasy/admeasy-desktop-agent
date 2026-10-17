@@ -127,9 +127,13 @@ def _create_ui() -> None:
         win.setCollectionBehavior_(behavior)
         view = CursorView.alloc().initWithFrame_(NSMakeRect(0, 0, SIZE, SIZE))
         win.setContentView_(view)
+        def _place(win_obj, x: int, y: int) -> None:
+            # pyautogui uses top-left screen coords; setFrameOrigin uses bottom-left (wrong).
+            win_obj.setFrameTopLeftPoint_((float(x - SIZE // 2), float(y - SIZE // 2)))
+
         with _lock:
             x, y = _state.x, _state.y
-        win.setFrameOrigin_((float(x - SIZE // 2), float(y - SIZE // 2)))
+        _place(win, x, y)
         win.orderFrontRegardless()
 
         def tick(_timer):
@@ -137,7 +141,7 @@ def _create_ui() -> None:
                 if _state.flash_frames > 0:
                     _state.flash_frames -= 1
                 x, y = _state.x, _state.y
-            win.setFrameOrigin_((float(x - SIZE // 2), float(y - SIZE // 2)))
+            _place(win, x, y)
             view.setNeedsDisplay_(True)
 
         NSTimer.scheduledTimerWithTimeInterval_repeats_block_(1.0 / 60.0, True, tick)
