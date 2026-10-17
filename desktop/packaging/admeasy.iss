@@ -1,6 +1,15 @@
+#define MyAppVersion "0.2.0.0"
+#ifndef AppVersion
+  #define AppVersion MyAppVersion
+#endif
+#ifndef AppVerName
+  #define AppVerName "0.2.0-beta"
+#endif
+
 [Setup]
 AppName=Admeasy
-AppVersion=0.2.0-beta
+AppVersion={#AppVersion}
+AppVerName={#AppVerName}
 DefaultDirName={autopf}\Admeasy
 DefaultGroupName=Admeasy
 OutputBaseFilename=Admeasy-Setup
