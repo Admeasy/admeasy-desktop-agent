@@ -35,6 +35,50 @@ def _pg():
     return pyautogui
 
 
+def _use_quartz() -> bool:
+    if sys.platform != "darwin":
+        return False
+    try:
+        from .. import input_darwin
+
+        return input_darwin.accessibility_trusted()
+    except Exception:
+        return False
+
+
+def _click_at(x: int, y: int, kind: str = "click") -> None:
+    if _use_quartz():
+        from .. import input_darwin
+
+        if kind == "right_click":
+            input_darwin.click(x, y, button="right")
+        elif kind == "double_click":
+            input_darwin.click(x, y, clicks=2)
+        elif kind == "middle_click":
+            input_darwin.click(x, y, button="middle")
+        else:
+            input_darwin.click(x, y)
+        if not input_darwin.verify_click(x, y):
+            raise RuntimeError(
+                "mouse click did not move the cursor — grant Accessibility to this app "
+                "(Terminal, iTerm, or Admeasy.app) in System Settings"
+            )
+        return
+    pg = _pg()
+    pg.moveTo(x, y, duration=0.15)
+    {"click": pg.click, "right_click": pg.rightClick, "double_click": pg.doubleClick,
+     "middle_click": pg.middleClick}[kind]()
+
+
+def _move_to(x: int, y: int) -> None:
+    if _use_quartz():
+        from .. import input_darwin
+
+        input_darwin.move_to(x, y)
+        return
+    _pg().moveTo(x, y, duration=0.15)
+
+
 def screenshot(monitor: int = 1, quality: int = 60, *, som: bool = True) -> dict:
     import mss
     from PIL import Image
@@ -115,26 +159,30 @@ def act(action: dict, scaler: Scaler | None = None) -> None:
             raise ValueError(f"unknown element_id {action.get('element_id')}")
         x, y = center
         _show(x, y, flash=True)
-        pg.moveTo(x, y, duration=0.15)
-        pg.click()
+        _click_at(x, y, "click")
         return
     if t in ("click", "right_click", "double_click", "middle_click"):
         x, y = pt()
         _show(x, y, flash=True)
-        pg.moveTo(x, y, duration=0.15)
-        {"click": pg.click, "right_click": pg.rightClick, "double_click": pg.doubleClick,
-         "middle_click": pg.middleClick}[t]()
+        _click_at(x, y, t)
     elif t == "move":
         x, y = pt()
         _show(x, y)
-        pg.moveTo(x, y, duration=0.15)
+        _move_to(x, y)
     elif t == "drag":
         fx, fy = sc.to_logical(float(action["from_x"]), float(action["from_y"]))
         tx, ty = pt()
         _show(fx, fy)
-        pg.moveTo(fx, fy, duration=0.1)
+        _move_to(fx, fy)
         _show(tx, ty)
-        pg.dragTo(tx, ty, duration=0.4, button="left")
+        if _use_quartz():
+            from .. import input_darwin
+
+            input_darwin.move_to(tx, ty)
+            input_darwin.click(tx, ty)
+        else:
+            pg.moveTo(fx, fy, duration=0.1)
+            pg.dragTo(tx, ty, duration=0.4, button="left")
     elif t == "type":
         eid = action.get("element_id") or action.get("mark")
         if eid is not None:
@@ -143,20 +191,28 @@ def act(action: dict, scaler: Scaler | None = None) -> None:
             center = som_mod.center_for_mark(int(eid))
             if center:
                 _show(center[0], center[1], flash=True)
-                pg.moveTo(center[0], center[1], duration=0.15)
-                pg.click()
+                _click_at(center[0], center[1], "click")
                 time.sleep(0.12)
         paste_text(str(action.get("text") or ""))
     elif t == "key":
         keys = parse_key(action.get("key") or "enter")
         pg.hotkey(*keys) if len(keys) > 1 else pg.press(keys[0])
     elif t == "scroll":
-        if action.get("x") is not None:
-            pg.moveTo(*pt())
-        if action.get("dy"):
-            pg.scroll(-int(action["dy"]) // 10 if sys.platform != "darwin" else -int(action["dy"]) // 20)
-        if action.get("dx"):
-            pg.hscroll(int(action["dx"]) // 10)
+        sx, sy = pt() if action.get("x") is not None else (None, None)
+        dy = int(action.get("dy") or 0)
+        dx = int(action.get("dx") or 0)
+        if _use_quartz() and sx is not None:
+            from .. import input_darwin
+
+            # Model scroll_amount is usually small; scale to wheel lines
+            input_darwin.scroll_at(sx, sy, max(-30, min(30, dy // 3)), max(-30, min(30, dx // 3)))
+        else:
+            if sx is not None:
+                _move_to(sx, sy)
+            if dy:
+                pg.scroll(-dy // 10 if sys.platform != "darwin" else -dy // 20)
+            if dx:
+                pg.hscroll(dx // 10)
     elif t in ("ax_press", "ax_type"):
         from .. import som as som_mod
 
@@ -180,11 +236,11 @@ def act(action: dict, scaler: Scaler | None = None) -> None:
                     timeout=5,
                 )
         elif center:
-            pg.moveTo(center[0], center[1], duration=0.15)
             if t == "ax_type":
+                _click_at(center[0], center[1], "click")
                 paste_text(str(action.get("text") or ""))
             else:
-                pg.click()
+                _click_at(center[0], center[1], "click")
     elif t == "wait":
         time.sleep(min(float(action.get("seconds") or 1), 10))
 
@@ -192,7 +248,7 @@ def act(action: dict, scaler: Scaler | None = None) -> None:
 def paste_text(text: str) -> None:
     """Type via the clipboard: reliable for any language and emoji. The previous clipboard is restored."""
     import pyperclip
-    pg = _pg()
+
     old = None
     try:
         old = pyperclip.paste()
@@ -200,7 +256,13 @@ def paste_text(text: str) -> None:
         pass
     pyperclip.copy(text)
     time.sleep(0.05)
-    pg.hotkey("command" if sys.platform == "darwin" else "ctrl", "v")
+    if _use_quartz():
+        from .. import input_darwin
+
+        input_darwin.key_combo(["command"], "v")
+    else:
+        pg = _pg()
+        pg.hotkey("command" if sys.platform == "darwin" else "ctrl", "v")
     time.sleep(0.15)
     if old is not None:
         try:

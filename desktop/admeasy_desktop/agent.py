@@ -237,6 +237,21 @@ class Agent:
                 return {"status": "ok", "result": {"answer": str(a.get("answer") or "")}}
             if t == "needs_login":
                 return {"status": "needs_login", "error": "sign-in required", "result": {"reason": "needs_login"}}
+            if self.scaler is None and t not in (None, "screenshot", "wait"):
+                prime = await loop.run_in_executor(None, screen.screenshot)
+                self.scaler = screen.Scaler(tuple(screen._pg().size()), tuple(prime["size"]))
+            if t not in (None, "screenshot", "wait") and sys.platform == "darwin":
+                from . import input_darwin
+
+                if not input_darwin.accessibility_trusted():
+                    return {
+                        "status": "permission_missing",
+                        "error": (
+                            "grant Accessibility to the app running Admeasy "
+                            "(Admeasy.app, Terminal, or your IDE) — clicks and typing will not work until then"
+                        ),
+                        "result": {"permissions_missing": ["accessibility"], "reason": "permission_missing"},
+                    }
             if t not in (None, "screenshot"):
                 label = t
                 if a.get("element_id") is not None:
@@ -248,6 +263,12 @@ class Agent:
                     await loop.run_in_executor(None, screen.act, a, self.scaler)
                 except ValueError as e:
                     return {"status": "error", "error": str(e), "result": {"reason": "bad_action"}}
+                except RuntimeError as e:
+                    return {
+                        "status": "permission_missing",
+                        "error": str(e),
+                        "result": {"permissions_missing": ["accessibility"], "reason": "click_failed"},
+                    }
                 delay = screen.settle_seconds(a)
                 await asyncio.sleep(delay)
             shot = await loop.run_in_executor(None, screen.screenshot)
