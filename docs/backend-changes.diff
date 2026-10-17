@@ -1,0 +1,130 @@
+--- a/backend/app/agent.py
++++ b/backend/app/agent.py
+@@ -46,6 +46,7 @@
+ from app.doc_tools import FILE_TOOL_NAMES, FILE_TOOL_SCHEMAS
+ from app.time_tools import CURRENT_TIME_SCHEMAS, CURRENT_TIME_TOOL_NAMES, call_current_time
+ from app.script_gate import clean_reply, dedupe_sentences, should_rewrite
++from app.devices.tools import DEVICE_TOOL_NAMES, DEVICE_TOOL_SCHEMAS
+ from app.workers.tools import VM_TOOL_NAMES, VM_TOOL_SCHEMAS, handoff_payload, vm_open_event
+ 
+ log = logging.getLogger(__name__)
+@@ -201,6 +202,7 @@
+         self._bg: set[asyncio.Task] = set()
+         self.notifications = None  # NotificationRepo, set by main when the DB is up
+         self.vm_tools = None  # workers.tools.VMTools, set by main when VM workers are enabled
++        self.device_tools = None  # devices.tools.DeviceTools (the user's own Mac/PC), set by main
+         self.file_tools = None  # doc_tools.FileTools, set by main
+         self.tool_blobs: dict[str, str] = {}
+         self.website_kb = None  # WebsiteKB, set by main
+@@ -217,6 +219,8 @@
+             schemas.extend(WEBSITE_TOOL_SCHEMAS)
+         if self.vm_tools:
+             schemas.extend(VM_TOOL_SCHEMAS)
++        if self.device_tools:
++            schemas.extend(DEVICE_TOOL_SCHEMAS)
+         if getattr(self, "file_tools", None):
+             schemas.extend(FILE_TOOL_SCHEMAS)
+         if self.deep:
+@@ -227,7 +231,7 @@
+         entries = []
+         for sc in self._builtin_schemas():
+             fn = sc["function"]
+-            pinned = fn["name"] in VM_TOOL_NAMES or fn["name"] in NOTIFICATION_TOOL_NAMES or fn["name"] in DEEP_TOOL_NAMES \
++            pinned = fn["name"] in VM_TOOL_NAMES or fn["name"] in DEVICE_TOOL_NAMES or fn["name"] in NOTIFICATION_TOOL_NAMES or fn["name"] in DEEP_TOOL_NAMES \
+                 or fn["name"] in WEB_TOOL_NAMES or fn["name"] in FILE_TOOL_NAMES \
+                 or fn["name"] in CURRENT_TIME_TOOL_NAMES
+             entries.append({"name": fn["name"], "description": ("[ready, call directly] " if pinned else "") +
+@@ -254,7 +258,7 @@
+         # VM + notification tools are always bound (no load_tools round trip): they back core voice intents
+         # ("open my computer", "read my notifications") and every extra LLM round adds ~1 s of latency.
+         # Web search is always bound (foreground and background). The model still chooses whether to call it.
+-        pinned = (VM_TOOL_SCHEMAS if self.vm_tools else []) + (DEEP_TOOL_SCHEMAS if self.deep else []) + \
++        pinned = (VM_TOOL_SCHEMAS if self.vm_tools else []) + (DEVICE_TOOL_SCHEMAS if self.device_tools else []) + (DEEP_TOOL_SCHEMAS if self.deep else []) + \
+             (FILE_TOOL_SCHEMAS if getattr(self, "file_tools", None) else []) + \
+             (NOTIFICATION_TOOL_SCHEMAS if self.notifications else []) + WEB_TOOL_SCHEMAS + CURRENT_TIME_SCHEMAS
+         names = {p["function"]["name"] for p in pinned}
+@@ -716,6 +720,8 @@
+                 return await self.website_kb.call(session.user_id, args)
+             if name in VM_TOOL_NAMES and self.vm_tools:
+                 return await self.vm_tools.call(session.user_id, name, args, session.conversation_id)
++            if name in DEVICE_TOOL_NAMES and self.device_tools:
++                return await self.device_tools.call(session.user_id, name, args, session.conversation_id)
+             if name in FILE_TOOL_NAMES and getattr(self, "file_tools", None):
+                 return await self.file_tools.call(session.user_id, name, args)
+             if name in DEEP_TOOL_NAMES and self.deep:
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -35,6 +35,7 @@
+ from app.voice.session import VoiceSession
+ from app.files_routes import api as files_api
+ from app.live import hub
++from app.devices.routes import api as devices_api
+ from app.workers.routes import api as vm_api
+ from app.task_notice import PushSender, TaskNotices, api as push_api
+ 
+@@ -153,6 +154,13 @@
+     app.state.website_kb.start_refresher(app.state.vault)
+     app.state.vm = None
+     app.state.deep = None
++    app.state.devices = None
++    if os.environ.get("DEVICES_ENABLED", "false").lower() == "true":  # the user's own Mac / Windows computers
++        from app.devices.service import DeviceService
++        from app.devices.tools import DeviceTools
++        app.state.devices = DeviceService(pool, activity=app.state.activity)
++        await app.state.devices.setup()
++        app.state.agent.device_tools = DeviceTools(app.state.devices)
+     if os.environ.get("VM_WORKERS_ENABLED", "false").lower() == "true":
+         from app.workers.service import Cfg, VMService
+         from app.workers.tools import VMTools
+@@ -216,6 +224,7 @@
+ app.include_router(oauth_api)
+ app.include_router(notif_api)
+ app.include_router(vm_api)
++app.include_router(devices_api)
+ app.include_router(files_api)
+ app.include_router(auth_api)
+ app.include_router(activity_api)
+--- a/backend/app/auth.py
++++ b/backend/app/auth.py
+@@ -187,7 +187,7 @@
+ 
+ 
+ @api.get("/google/start")
+-async def google_browser_start(request: Request):
++async def google_browser_start(request: Request, desktop_port: int | None = None, nonce: str = ""):
+     """Browser Google Sign-In for the app: opens Google, then deep-links back with JWTs (no Android SHA-1 needed)."""
+     from app.oauth_providers import build_providers
+     s = request.app.state.settings
+@@ -204,7 +204,9 @@
+     vault = getattr(request.app.state, "vault", None)
+     if vault is None:
+         raise HTTPException(503, "token vault required for sign-in state")
+-    state = vault.f.encrypt(json.dumps({"v": verifier, "t": time.time(), "k": "signin", "p": "google"}).encode()).decode()
++    state = vault.f.encrypt(json.dumps({"v": verifier, "t": time.time(), "k": "signin", "p": "google",
++                                                   "dp": desktop_port if desktop_port and 1024 <= desktop_port <= 65535 else None,
++                                                   "n": nonce[:64]}).encode()).decode()
+     return RedirectResponse(p.authorize_url(state, challenge), status_code=302)
+ 
+ 
+@@ -220,6 +222,11 @@
+         _row, issued = await _establish_session(c, profile, s.jwt_secret)
+     deep = (f"admeasy://auth?access_token={issued['access_token']}&refresh_token={issued['refresh_token']}"
+             f"&email={profile['email']}")
++    if st.get("dp"):  # desktop app: hand the tokens to its loopback listener, never to a remote host
++        from urllib.parse import urlencode
++        deep = f"http://127.0.0.1:{int(st['dp'])}/callback?" + urlencode(
++            {"access_token": issued["access_token"], "refresh_token": issued["refresh_token"],
++             "email": profile["email"], "nonce": st.get("n") or ""})
+     return HTMLResponse(f"""<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
+       <p>Signed in as {profile.get('email')}. Returning to Admeasy…</p>
+       <script>location.href={json.dumps(deep)};</script>
+--- a/backend/.env.example
++++ b/backend/.env.example
+@@ -116,3 +116,7 @@
+ TTS_SPEAKER=
+ TTS_CODEC=mp3
+ DEFAULT_LANGUAGE=hi-IN
++
++# --- Local computers (desktop app .dmg / .exe) ---
++# Lets the signed-in phone control the user's own Mac/Windows machine through device_* tools. Needs Postgres.
++DEVICES_ENABLED=false

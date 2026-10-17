@@ -1,0 +1,47 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admeasy</title>
+<style>
+:root{--bg:#fff;--fg:#14151a;--mut:#6b6f7b;--card:#f5f6f8;--line:#e3e5ea;--acc:#4f46e5;--ok:#16a34a;--bad:#dc2626}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1014;--fg:#f2f3f5;--mut:#9aa0ad;--card:#181a21;--line:#262932}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 -apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:520px;margin:0 auto;padding:28px 20px}h1{font-size:20px;margin:0 0 4px}.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:12px 0}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0}
+button{font:inherit;border:0;border-radius:10px;padding:9px 14px;background:var(--acc);color:#fff;cursor:pointer}
+button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}button.big{width:100%;padding:13px}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:8px;background:var(--mut)}.on{background:var(--ok)}.off{background:var(--bad)}
+select{font:inherit;padding:7px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.log{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;max-height:180px;overflow:auto;white-space:pre-wrap;color:var(--mut);margin:8px 0 0}
+</style>
+<main id="app"></main>
+<script>
+const $=s=>document.querySelector(s), api=(p,b)=>fetch('/api/'+p,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{}).then(r=>r.json());
+const dot=on=>`<span class="dot ${on?'on':'off'}"></span>`;
+async function draw(){
+  const s=await api('state');
+  const logs=(await fetch('/api/logs').then(r=>r.json())).lines.join('\n');
+  if(!s.signed_in){ $('#app').innerHTML=`<h1>Admeasy</h1><p class="mut">Sign in with the same Google account you use on your phone. Your phone can then use this computer.</p>
+    <button class="big" id="login">${s.logging_in?'Waiting for browser…':'Continue with Google'}</button><p class="mut">${s.error||''}</p>`;
+    $('#login').onclick=()=>{api('login',{});setTimeout(draw,500)}; return; }
+  const perms=Object.entries(s.permissions).filter(([k,v])=>typeof v==='boolean').map(([k,v])=>
+    `<div class="row"><span>${dot(v)}${k==='screen'?'Screen Recording':'Accessibility (mouse and keyboard)'}</span>${v?'<span class="mut">granted</span>':`<button class="ghost" onclick="api('open_settings',{which:'${k}'})">Grant</button>`}</div>`).join('');
+  const devs=(s.devices||[]).map(d=>`<div class="row"><span>${dot(d.online)}${d.name} <span class="mut">${d.platform}</span></span><span class="mut">${d.online?'online':'offline'}</span></div>`).join('')||'<p class="mut">No devices yet.</p>';
+  $('#app').innerHTML=`<h1>${s.email}</h1><p class="mut">This computer is ${s.online?'<b>connected</b>':'offline'} · ${s.detail||''}</p>
+   <div class="card"><b>Connected devices</b>${devs}</div>
+   <div class="card"><b>Permissions</b>${perms}</div>
+   <div class="card"><div class="row"><span>Ask me before risky actions</span><select id="mode">
+     ${[['ask_risky','Risky only'],['ask_always','Every action'],['trusted','Never (trusted)']].map(([v,t])=>`<option value="${v}" ${s.settings.approval_mode===v?'selected':''}>${t}</option>`).join('')}</select></div>
+   <div class="row"><span>Keep this computer awake</span><input type="checkbox" id="awake" ${s.settings.keep_awake?'checked':''}></div>
+   <div class="row"><span>Start at login</span><input type="checkbox" id="login_start" ${s.settings.start_at_login?'checked':''}></div>
+   <div class="row"><span>Pause Admeasy on this computer</span><input type="checkbox" id="paused" ${s.settings.paused?'checked':''}></div></div>
+   <div class="card"><b>Live log</b><div class="log" id="log"></div></div>
+   <button class="ghost" id="out">Sign out and remove this computer</button>`;
+  $('#log').textContent=logs||'(no log lines yet)';
+  $('#mode').onchange=e=>api('settings',{approval_mode:e.target.value});
+  $('#awake').onchange=e=>api('settings',{keep_awake:e.target.checked});
+  $('#login_start').onchange=e=>api('settings',{start_at_login:e.target.checked});
+  $('#paused').onchange=e=>api('settings',{paused:e.target.checked});
+  $('#out').onclick=async()=>{await api('logout',{});draw()};
+}
+draw();setInterval(draw,4000);
+</script>

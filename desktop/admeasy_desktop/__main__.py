@@ -1,0 +1,121 @@
+"""admeasy-desktop run | login | doctor | devices | logout   (the .dmg / .exe launches `run`)"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import logging
+import os
+import platform
+import shutil
+import sys
+import threading
+
+import httpx
+
+from . import VERSION, auth, permissions, system_hooks
+from .config import LOG_DIR, Settings
+
+
+def _enrol_caps(agent) -> dict:
+    return agent.capabilities()
+
+
+def cmd_run(background: bool) -> None:
+    from .agent import Agent
+    from .log_buffer import configure_logging
+    from .ui.server import UiState, serve
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    configure_logging(str(LOG_DIR / "agent.log"))
+    s = Settings.load()
+    ui = UiState(s)
+    agent = Agent(s)
+    agent.status_cb = ui.set_status
+    system_hooks.keep_awake(s.keep_awake and not s.paused)
+    system_hooks.set_autostart(s.start_at_login)
+    threading.Thread(target=lambda: asyncio.run(agent.tunnel()), daemon=True).start()
+    _srv, port = serve(ui)
+    url = f"http://127.0.0.1:{port}/"
+
+    def set_paused(p: bool) -> None:
+        s.paused = p
+        s.save()
+        system_hooks.keep_awake(s.keep_awake and not s.paused)
+
+    if background and auth.state()["signed_in"]:
+        from .tray import start_tray
+        start_tray(s.paused, set_paused, lambda: os._exit(0))
+        threading.Event().wait()
+        return
+    try:
+        import webview
+        webview.create_window("Admeasy", url, width=460, height=720)
+        webview.start()  # must own the main thread on macOS
+    except Exception:
+        import webbrowser
+        webbrowser.open(url)
+        threading.Event().wait()
+
+
+def cmd_doctor() -> int:
+    s = Settings.load()
+    ok = True
+
+    def line(name, good, detail=""):
+        nonlocal ok
+        ok &= bool(good)
+        print(f"[{'ok' if good else 'FAIL'}] {name}{(' - ' + detail) if detail else ''}")
+    line("version", True, f"{VERSION} on {platform.platform()}")
+    try:
+        r = httpx.get(s.backend.rstrip("/") + "/health", timeout=8)
+        line("backend reachable", r.status_code == 200, s.backend)
+    except Exception as e:
+        line("backend reachable", False, f"{s.backend}: {e}")
+    st = auth.state()
+    line("signed in", st["signed_in"], st.get("email") or "run: admeasy-desktop login")
+    line("computer enrolled", bool(st["device_id"]))
+    perms = permissions.check()
+    for k in ("screen", "accessibility"):
+        line(f"permission: {k}", perms.get(k), "" if perms.get(k) else "System Settings > Privacy & Security")
+    chrome = shutil.which("google-chrome") or shutil.which("chrome") or sys.platform in ("darwin", "win32")
+    line("Chrome (for browser control)", chrome, "install Google Chrome if browser ops fail")
+    try:
+        from .executors import screen
+        shot = screen.screenshot()
+        line("screenshot", True, f"{shot['size'][0]}x{shot['size'][1]}")
+    except Exception as e:
+        line("screenshot", False, str(e))
+    return 0 if ok else 1
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(prog="admeasy-desktop")
+    sub = ap.add_subparsers(dest="cmd")
+    r = sub.add_parser("run")
+    r.add_argument("--background", action="store_true")
+    for n in ("login", "doctor", "devices", "logout"):
+        sub.add_parser(n)
+    a = ap.parse_args()
+    s = Settings.load()
+    if a.cmd in (None, "run"):
+        cmd_run(getattr(a, "background", False))
+    elif a.cmd == "doctor":
+        sys.exit(cmd_doctor())
+    elif a.cmd == "login":
+        from .agent import Agent
+        t = auth.login_via_browser(s.backend)
+        for k in ("access_token", "refresh_token", "email"):
+            auth.save_secret(k, t[k])
+        auth.enrol(s, _enrol_caps(Agent(s)), platform.platform())
+        permissions.check(prompt=True)
+        print("signed in as", t["email"])
+    elif a.cmd == "devices":
+        from .ui.server import UiState
+        for d in UiState(s).devices():
+            print(("online " if d["online"] else "offline"), d["name"], d["platform"])
+    elif a.cmd == "logout":
+        from .ui.server import UiState
+        UiState(s).logout()
+
+
+if __name__ == "__main__":
+    main()

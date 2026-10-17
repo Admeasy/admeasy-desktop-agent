@@ -1,0 +1,46 @@
+name: desktop
+on:
+  push: {paths: ["desktop/**"]}
+  workflow_dispatch:
+jobs:
+  test:
+    strategy: {matrix: {os: [ubuntu-latest, macos-latest, windows-latest]}}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -e ".[dev]"
+        working-directory: desktop
+      - run: python -m pytest -q tests
+        working-directory: desktop
+  macos:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: import signing cert
+        env: {CERT_P12: "${{ secrets.MAC_CERT_P12 }}", CERT_PASSWORD: "${{ secrets.MAC_CERT_PASSWORD }}"}
+        run: |
+          echo "$CERT_P12" | base64 -d > cert.p12
+          security create-keychain -p ci build.keychain && security default-keychain -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security import cert.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+      - run: xcrun notarytool store-credentials admeasy-notary --apple-id "${{ secrets.APPLE_ID }}" --team-id "${{ secrets.APPLE_TEAM_ID }}" --password "${{ secrets.APPLE_APP_PASSWORD }}"
+      - run: SIGN_ID="${{ secrets.MAC_SIGN_ID }}" desktop/packaging/build_macos.sh
+      - uses: actions/upload-artifact@v4
+        with: {name: Admeasy-dmg, path: desktop/packaging/Admeasy.dmg}
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: choco install innosetup -y
+      - run: powershell -File desktop/packaging/build_windows.ps1
+      - uses: actions/upload-artifact@v4
+        with: {name: Admeasy-exe, path: desktop/packaging/Output/Admeasy-Setup.exe}
