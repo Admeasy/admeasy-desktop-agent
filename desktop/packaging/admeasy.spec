@@ -23,6 +23,11 @@ hidden = collect_submodules("admeasy_desktop") + [
 ]
 if sys.platform == "win32":
     hidden += collect_submodules("uiautomation") + ["uiautomation", "comtypes", "comtypes.client", "comtypes.gen"]
+    hidden += ["tkinter", "_tkinter"]
+if sys.platform == "linux":
+    hidden += ["tkinter", "_tkinter"]
+if sys.platform == "darwin":
+    hidden += ["AppKit", "Foundation", "objc"]
 
 bridge = os.path.join(root, "browser_extension")
 native = os.path.join(root, "native_host")

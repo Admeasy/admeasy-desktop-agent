@@ -251,7 +251,7 @@ class DeviceService:
                     await c.execute("""INSERT INTO activity_log (user_id, tool, args_summary, result_summary, status)
                         VALUES ($1,$2,$3,$4,$5)""", j["user_id"], f"device__{j['kind']}",
                                     json.dumps(json.loads(j["params"]), ensure_ascii=False)[:200],
-                                    (error or str(result or ""))[:300], "ok" if status == "done" else status)
+                                    (error or str(result or ""))[:300], "ok" if status in ("done", "ok") else status)
             except Exception as e:
                 log.debug("activity_log unavailable: %s", e)
 
