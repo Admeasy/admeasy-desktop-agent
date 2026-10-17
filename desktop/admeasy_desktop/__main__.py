@@ -20,7 +20,8 @@ from .api import (
     DevicesNotDeployedError,
     devices_api_state,
 )
-from .config import LOG_DIR, Settings
+from .config import CONFIG_PATH, LOG_DIR, Settings
+from .runtime import app_executable, frozen
 
 
 def _enrol_caps(agent) -> dict:
@@ -38,7 +39,12 @@ def cmd_run(background: bool) -> None:
     agent = Agent(s)
     agent.status_cb = ui.set_status
     system_hooks.keep_awake(s.keep_awake and not s.paused)
-    system_hooks.set_autostart(s.start_at_login)
+    if s.start_at_login:
+        system_hooks.set_autostart(True, app_executable())
+    elif frozen() and not CONFIG_PATH.exists():
+        s.start_at_login = True
+        s.save()
+        system_hooks.set_autostart(True, app_executable())
     threading.Thread(target=lambda: asyncio.run(agent.tunnel()), daemon=True).start()
     _srv, port = serve(ui)
     url = f"http://127.0.0.1:{port}/"

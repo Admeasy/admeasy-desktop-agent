@@ -1,6 +1,6 @@
 [Setup]
 AppName=Admeasy
-AppVersion=0.1.0
+AppVersion=0.2.0-beta
 DefaultDirName={autopf}\Admeasy
 DefaultGroupName=Admeasy
 OutputBaseFilename=Admeasy-Setup
@@ -15,4 +15,7 @@ Source: "dist\Admeasy\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 Name: "{group}\Admeasy"; Filename: "{app}\Admeasy.exe"
 
 [Run]
-Filename: "{app}\Admeasy.exe"; Description: "Start Admeasy"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Admeasy.exe"; Description: "Open Admeasy now"; Flags: nowait postinstall skipifsilent
+
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Admeasy"; ValueData: """{app}\Admeasy.exe"" run --background"; Flags: uninsdeletevalue

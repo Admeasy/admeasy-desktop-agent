@@ -31,7 +31,11 @@ async def shell(p: dict, cancel: asyncio.Event | None = None) -> dict:
     except asyncio.CancelledError:
         proc.kill()
         raise
-    return {"status": "done", "result": {"exit_code": proc.returncode, "output": out.decode(errors="replace")[-12000:]}}
+    text = out.decode(errors="replace")[-12000:]
+    body = {"exit_code": proc.returncode, "output": text}
+    if proc.returncode != 0:
+        return {"status": "failed", "error": f"command exited with code {proc.returncode}", "result": body}
+    return {"status": "done", "result": body}
 
 
 def open_target(p: dict) -> dict:
