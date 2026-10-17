@@ -14,6 +14,13 @@ pip install -r requirements.txt
 pip install -e .
 if [[ "$(uname -s)" == "Darwin" ]]; then
   pip install 'pyobjc-framework-Quartz>=10' 'pyobjc-framework-ApplicationServices>=10' || true
+  if ! "$PY" -c "import _tkinter" 2>/dev/null; then
+    echo ""
+    echo "Note: Homebrew Python often lacks Tk. Pink agent cursor needs:"
+    echo "  brew install python-tk@3.14"
+    echo "Or disable overlay: export ADMEASY_SHOW_AGENT_CURSOR=0"
+    echo "CUA clicks use pyautogui — grant Accessibility to Terminal (or your IDE) in System Settings."
+  fi
 fi
 echo ""
 echo "Done. From this directory: source .venv/bin/activate"

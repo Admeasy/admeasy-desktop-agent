@@ -69,6 +69,24 @@ def parse_key(spec: str) -> list[str]:
     return [_KEYS.get(k.strip().lower(), k.strip().lower()) for k in str(spec).split("+") if k.strip()]
 
 
+def settle_seconds(action: dict) -> float:
+    """Wait after an action so the UI can update before the next screenshot."""
+    t = str(action.get("type") or "")
+    if t in ("click", "click_mark", "right_click", "double_click", "middle_click", "ax_press"):
+        return 1.25
+    if t == "key":
+        return 1.0
+    if t == "scroll":
+        return 0.65
+    if t == "type" or t == "ax_type":
+        return 0.5
+    if t == "drag":
+        return 0.9
+    if t == "wait":
+        return 0.15
+    return 0.85
+
+
 def act(action: dict, scaler: Scaler | None = None) -> None:
     from ..config import Settings
     from .. import cursor_overlay
@@ -118,6 +136,16 @@ def act(action: dict, scaler: Scaler | None = None) -> None:
         _show(tx, ty)
         pg.dragTo(tx, ty, duration=0.4, button="left")
     elif t == "type":
+        eid = action.get("element_id") or action.get("mark")
+        if eid is not None:
+            from .. import som as som_mod
+
+            center = som_mod.center_for_mark(int(eid))
+            if center:
+                _show(center[0], center[1], flash=True)
+                pg.moveTo(center[0], center[1], duration=0.15)
+                pg.click()
+                time.sleep(0.12)
         paste_text(str(action.get("text") or ""))
     elif t == "key":
         keys = parse_key(action.get("key") or "enter")

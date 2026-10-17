@@ -69,7 +69,7 @@ class Agent:
             "browser_modes": ["default_first", "playwright_profile", "extension_bridge"],
             "playwright_requires": "params.force_playwright or ADMEASY_PLAYWRIGHT=1",
             "native_apps": True,
-            "agent_cursor_overlay": self.s.show_agent_cursor,
+            "agent_cursor_overlay": self.s.show_agent_cursor and cursor_overlay.is_available(),
             "objectives": {"echo_objective_id": True},
             "set_of_mark": True,
             "ax_tree": sys.platform in ("darwin", "win32"),
@@ -231,8 +231,6 @@ class Agent:
         if kind == "screenshot":
             return {"status": "ok", "result": await loop.run_in_executor(None, screen.screenshot)}
         if kind == "cua":
-            if self.s.show_agent_cursor:
-                cursor_overlay.ensure_started()
             a = p.get("action") or {}
             t = a.get("type")
             if t == "done":
@@ -240,11 +238,25 @@ class Agent:
             if t == "needs_login":
                 return {"status": "needs_login", "error": "sign-in required", "result": {"reason": "needs_login"}}
             if t not in (None, "screenshot"):
-                await self.step(jid, f"{t} {a.get('text', '')[:40]}", p.get("objective_id"))
-                await loop.run_in_executor(None, screen.act, a, self.scaler)
-                await asyncio.sleep(0.8)
+                label = t
+                if a.get("element_id") is not None:
+                    label = f"{t} element_id={a.get('element_id')}"
+                elif a.get("x") is not None:
+                    label = f"{t} @ {int(a.get('x'))},{int(a.get('y'))}"
+                await self.step(jid, label[:300], p.get("objective_id"))
+                try:
+                    await loop.run_in_executor(None, screen.act, a, self.scaler)
+                except ValueError as e:
+                    return {"status": "error", "error": str(e), "result": {"reason": "bad_action"}}
+                delay = screen.settle_seconds(a)
+                await asyncio.sleep(delay)
             shot = await loop.run_in_executor(None, screen.screenshot)
             self.scaler = screen.Scaler(tuple(screen._pg().size()), tuple(shot["size"]))
+            await self.step(
+                jid,
+                f"screenshot {shot['size'][0]}x{shot['size'][1]} ({len(shot.get('elements') or [])} marks)",
+                p.get("objective_id"),
+            )
             hints = p.get("skill_hints") or []
             fail = detect_failure(shot.get("ax_tree") or [], skill_hints=hints)
             if fail and fail.get("status") == "captcha":
@@ -326,7 +338,7 @@ class Agent:
     async def tunnel(self) -> None:
         self._loop = asyncio.get_running_loop()
         start_bridge_server()
-        if self.s.show_agent_cursor:
+        if self.s.show_agent_cursor and cursor_overlay.is_available():
             cursor_overlay.set_enabled(True)
             cursor_overlay.ensure_started()
         asyncio.create_task(self.worker())

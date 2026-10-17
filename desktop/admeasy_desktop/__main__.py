@@ -126,6 +126,16 @@ def cmd_doctor() -> int:
         line("screenshot", True, f"{shot['size'][0]}x{shot['size'][1]}")
     except Exception as e:
         line("screenshot", False, str(e))
+    from . import cursor_overlay
+
+    if s.show_agent_cursor and not cursor_overlay.is_available():
+        line(
+            "agent cursor (tkinter)",
+            False,
+            "brew install python-tk@3.14 or export ADMEASY_SHOW_AGENT_CURSOR=0 (clicks still work)",
+        )
+    elif s.show_agent_cursor:
+        line("agent cursor (tkinter)", True, "pink overlay available")
     return 0 if ok else 1
 
 
