@@ -12,6 +12,7 @@ import httpx
 from .. import auth, permissions, system_hooks
 from ..api import DEVICES_DISABLED, DEVICES_NOT_DEPLOYED, DevicesDisabledError, DevicesNotDeployedError, raise_for_devices
 from ..config import Settings
+from ..runtime import app_executable
 from ..log_buffer import tail
 
 INDEX = Path(__file__).with_name("index.html")
@@ -54,6 +55,9 @@ class UiState:
                 from ..agent import Agent
                 auth.enrol(self.settings, Agent(self.settings).capabilities(), platform.platform())
                 permissions.check(prompt=True)  # first-run: triggers the macOS Screen Recording / Accessibility prompts
+                self.settings.start_at_login = True
+                self.settings.save()
+                system_hooks.set_autostart(True, app_executable())
             except (DevicesDisabledError, DevicesNotDeployedError) as e:
                 self.error = str(e)
             except Exception as e:

@@ -1,0 +1,48 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Build unsigned DMG
+        run: bash desktop/packaging/build_macos_unsigned.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: desktop/packaging/Admeasy-*-macos-unsigned.dmg
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+      - name: Build unsigned installer
+        run: powershell -ExecutionPolicy Bypass -File desktop/packaging/build_windows_unsigned.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: desktop/packaging/Admeasy-*-windows-unsigned.exe
+  publish:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {path: artifacts}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body_path: docs/INSTALL_BETA.md
+          files: |
+            artifacts/macos-dmg/*
+            artifacts/windows-exe/*

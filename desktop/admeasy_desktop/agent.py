@@ -22,6 +22,7 @@ from .config import Settings, platform_name, ws_url
 from .executors import screen, system
 from .executors.browser import Browser
 from .policy import judge
+from .results import normalize as normalize_result
 
 log = logging.getLogger("admeasy-desktop")
 APPROVAL_WAIT_S = 120
@@ -38,6 +39,7 @@ class Agent:
         self.queue: asyncio.Queue = asyncio.Queue()
         self.scaler = None
         self.status_cb = None  # UI hook: (online: bool, detail: str)
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     # ---------- wire ----------
     async def send(self, msg: dict) -> None:
@@ -87,7 +89,8 @@ class Agent:
                 else:
                     miss = permissions.missing(permissions.wire_snapshot()) if kind in ("cua", "screenshot") else []
                     res = ({"status": "needs_permission", "error": "grant in System Settings: " + ", ".join(miss)}
-                           if miss else await asyncio.wait_for(self.dispatch(jid, kind, p), job.get("timeout_s", 300)))
+                           if miss else normalize_result(kind, await asyncio.wait_for(
+                               self.dispatch(jid, kind, p), job.get("timeout_s", 300))))
         except asyncio.CancelledError:
             res = {"status": "cancelled", "error": "stopped by the user"}
         except asyncio.TimeoutError:
@@ -95,6 +98,8 @@ class Agent:
         except Exception as e:
             log.exception("job %s", jid)
             res = {"status": "failed", "error": f"{type(e).__name__}: {e}"}
+        res = normalize_result(kind, res)
+        log.info("job %s %s -> %s", jid, kind, res.get("status"))
         await self.send({"type": "result", "job_id": jid, **res})
 
     async def dispatch(self, jid: str, kind: str, p: dict) -> dict:
@@ -133,16 +138,26 @@ class Agent:
     async def worker(self) -> None:
         while True:
             job = await self.queue.get()
-            self.task = asyncio.create_task(self.run_job(job))
             try:
+                self.task = asyncio.create_task(self.run_job(job))
                 await self.task
             except asyncio.CancelledError:
                 pass
-            self.task = None
+            finally:
+                self.task = None
+                self.queue.task_done()
+
+    async def _emit_cancelled(self, job_id: str) -> None:
+        await self.send({"type": "result", "job_id": job_id, "status": "cancelled", "error": "stopped by the user"})
 
     def cancel_all(self) -> None:
+        queued = []
         while not self.queue.empty():
-            self.queue.get_nowait()
+            queued.append(self.queue.get_nowait())
+        loop = self._loop
+        for job in queued:
+            if loop and loop.is_running():
+                asyncio.run_coroutine_threadsafe(self._emit_cancelled(job["job_id"]), loop)
         if self.task and not self.task.done():
             self.task.cancel()
         for f in self.approvals.values():
@@ -151,6 +166,7 @@ class Agent:
 
     # ---------- tunnel ----------
     async def tunnel(self) -> None:
+        self._loop = asyncio.get_running_loop()
         asyncio.create_task(self.worker())
         backoff = 1
         while True:
