@@ -62,23 +62,41 @@ def parse_key(spec: str) -> list[str]:
 
 
 def act(action: dict, scaler: Scaler | None = None) -> None:
+    from ..config import Settings
+    from .. import cursor_overlay
+
     pg = _pg()
     t = action.get("type")
     sc = scaler or Scaler(tuple(pg.size()), tuple(pg.size()))
+    show_cursor = Settings.load().show_agent_cursor
 
     def pt(prefix=""):
         return sc.to_logical(float(action[prefix + "x"]), float(action[prefix + "y"]))
+
+    def _show(x: int, y: int, flash: bool = False) -> None:
+        if not show_cursor:
+            return
+        cursor_overlay.set_enabled(True)
+        cursor_overlay.move_to(x, y)
+        if flash:
+            cursor_overlay.click_flash()
+
     if t in ("click", "right_click", "double_click", "middle_click"):
         x, y = pt()
+        _show(x, y, flash=True)
         pg.moveTo(x, y, duration=0.15)
         {"click": pg.click, "right_click": pg.rightClick, "double_click": pg.doubleClick,
          "middle_click": pg.middleClick}[t]()
     elif t == "move":
-        pg.moveTo(*pt(), duration=0.15)
+        x, y = pt()
+        _show(x, y)
+        pg.moveTo(x, y, duration=0.15)
     elif t == "drag":
         fx, fy = sc.to_logical(float(action["from_x"]), float(action["from_y"]))
         tx, ty = pt()
+        _show(fx, fy)
         pg.moveTo(fx, fy, duration=0.1)
+        _show(tx, ty)
         pg.dragTo(tx, ty, duration=0.4, button="left")
     elif t == "type":
         paste_text(str(action.get("text") or ""))

@@ -2,7 +2,7 @@
 
 Canonical server implementation: **admeasy-ai-assistant** `main` (device tools in `app/devices/tools.py`). The desktop app targets that API. If `GET /devices` returns **404**, the host has not been redeployed yet; **503** means `DEVICES_ENABLED=false`.
 
-Desktop package version **0.3.0-beta** advertises **15 job kinds** (see below). Each backend `device_*` tool maps to one kind + `params.op` (and tool-specific fields).
+Desktop package version **0.3.1-beta** advertises **15 job kinds** (see below). Each backend `device_*` tool maps to one kind + `params.op` (and tool-specific fields). See [COMPUTER_USE.md](COMPUTER_USE.md) for native-app vs browser vs CUA routing.
 
 ## Enablement
 
@@ -57,7 +57,7 @@ Response: `{"device_id": "uuid", "device_token": "secret-once"}`
 
 | type | fields |
 |------|--------|
-| `task` | `job_id`, `kind`, `params`, optional `timeout_s` |
+| `task` | `job_id`, `kind`, `params`, optional `timeout_s`, optional `objective_id` (also inside `params`) |
 | `approval_result` | `approval_id`, `allow` |
 | `cancel_all` | — |
 
@@ -122,14 +122,25 @@ Managed CLIs: **claude**, **gemini**, **cursor** (`cursor-agent`), **git**.
 | `run` | `profile`, `prompt` or `command`, `cwd?`, `timeout_s?` |
 | `spawn` / `write` / `read` / `close` / `list` | same as `terminal` + `profile`, `init?` |
 
+### Objectives (backend orchestration)
+
+The **desktop does not run the objective loop**; it executes tasks and echoes `objective_id` in `result`. The **assistant backend** should:
+
+1. Create an objective record (e.g. Supabase `device_objectives`: id, user_id, description, success_criteria, status).
+2. Plan steps; send each `task` with `params.objective_id`.
+3. After each result, evaluate whether the **objective** is achieved (not only whether the last task succeeded).
+4. If not achieved, continue with more tasks or return `objective_status: incomplete` with a clear reason.
+
+Desktop capabilities include `objectives.echo_objective_id: true`.
+
 ### `browser`
 
-Playwright on dedicated Chrome profile (`~/.admeasy/chrome-profile`).
+Default **`browser_automation=default_first`**: opens URL in the **system default browser** (user sessions) and returns a **screen screenshot**. DOM `click`/`type` in this mode returns `needs_human` with hint to use **`cua`**. Optional isolated Playwright profile: `params.force_playwright=true` or `params.automation=playwright_profile`.
 
 | op | params |
 |----|--------|
-| `read`, `navigate`, `open` | `url` |
-| `click` | `selector` or `text` or `x`,`y` |
+| `read`, `navigate`, `open` | `url`, `settle_s?` |
+| `click` | `selector` or `text` or `x`,`y` (playwright profile only) |
 | `type`, `fill` | `text`, `selector?` |
 | `press` | `key` |
 | `scroll` | `dy` |
@@ -174,10 +185,12 @@ Paths must stay under `capabilities.files` (shared folders).
 
 ### `whatsapp`
 
+**Default:** opens **WhatsApp desktop** and returns a screen screenshot. Web only when `fallback_web: true`.
+
 | op | params |
 |----|--------|
+| `open`, `read`, `status` | `settle_s?`, `fallback_web?` |
 | `open_desktop` | — |
-| `read`, `navigate`, `click`, `type`, … | same as `browser` (default `https://web.whatsapp.com/`) |
 
 ### `messages` (macOS)
 
@@ -204,4 +217,4 @@ Paths must stay under `capabilities.files` (shared folders).
 
 ## Capabilities (`hello.capabilities`)
 
-Includes `job_kinds` (sorted list), `tools` (group manifest), `cli_profiles`, `ide`, `browser`, `terminal`, `files` (shared folder paths), `approval_mode`, `keep_awake`.
+Includes `job_kinds`, `tools`, `browser` (`default_first` \| `playwright_profile`), `browser_modes`, `native_apps`, `agent_cursor_overlay`, `objectives`, `cli_profiles`, `ide`, `terminal`, `files`, `approval_mode`, `keep_awake`.

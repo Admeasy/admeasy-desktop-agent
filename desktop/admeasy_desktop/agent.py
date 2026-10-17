@@ -54,7 +54,11 @@ class Agent:
         return {
             "screen": True,
             "mouse_keyboard": True,
-            "browser": "chrome-playwright",
+            "browser": self.s.browser_automation,
+            "browser_modes": ["default_first", "playwright_profile"],
+            "native_apps": True,
+            "agent_cursor_overlay": self.s.show_agent_cursor,
+            "objectives": {"echo_objective_id": True},
             "shell": True,
             "terminal": True,
             "cli_profiles": ["claude", "gemini", "cursor", "git"],
@@ -137,8 +141,22 @@ class Agent:
             log.exception("job %s", jid)
             res = {"status": "failed", "error": f"{type(e).__name__}: {e}"}
         res = normalize_result(kind, res)
+        res = self._attach_objective(p, res)
         log.info("job %s %s -> %s", jid, kind, res.get("status"))
         await self.send({"type": "result", "job_id": jid, **res})
+
+    @staticmethod
+    def _attach_objective(params: dict, res: dict) -> dict:
+        oid = params.get("objective_id")
+        if not oid:
+            return res
+        out = dict(res)
+        body = dict(out.get("result") or {})
+        body["objective_id"] = oid
+        if params.get("objective_status"):
+            body["objective_status"] = params.get("objective_status")
+        out["result"] = body
+        return out
 
     async def dispatch(self, jid: str, kind: str, p: dict) -> dict:
         if kind not in JOB_KINDS:

@@ -38,6 +38,10 @@ class Settings:
     keep_awake: bool = True
     start_at_login: bool = True
     paused: bool = False
+    # default_first: URLs in your default browser + screen/CUA for interaction (keeps your logins).
+    # playwright_profile: isolated ~/.admeasy/chrome-profile (automation only).
+    browser_automation: str = "default_first"
+    show_agent_cursor: bool = True
 
     @classmethod
     def load(cls) -> "Settings":

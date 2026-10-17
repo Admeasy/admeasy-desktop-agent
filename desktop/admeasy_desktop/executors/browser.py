@@ -1,18 +1,42 @@
-"""Playwright on the user's REAL Chrome, with a dedicated persistent Admeasy profile (~/.admeasy/chrome-profile).
-
-Why a dedicated profile: since Chrome 136, remote debugging is ignored on the default profile directory, so Playwright
-cannot attach to the everyday profile. Instead the user signs in to their sites once in this window (on their own machine,
-own IP, own device fingerprint) and the sessions stay on disk. That fixes the cloud-VM problem of sessions that are
-missing or flagged. For the everyday Chrome window use pixel control (executors/screen.py)."""
+"""Browser automation: default-first (your browser + screen/CUA) or optional isolated Playwright profile."""
 from __future__ import annotations
 
+import asyncio
 import base64
+import sys
 
-from ..config import PROFILE_DIR
+from ..config import PROFILE_DIR, Settings
+from .app_launch import open_url_default
 
-CAPTCHA = ["iframe[src*='challenges.cloudflare.com']", "iframe[src*='recaptcha']", "iframe[src*='hcaptcha']",
-           "text=Verify you are human", "#challenge-form"]
+CAPTCHA = [
+    "iframe[src*='challenges.cloudflare.com']",
+    "iframe[src*='recaptcha']",
+    "iframe[src*='hcaptcha']",
+    "text=Verify you are human",
+    "#challenge-form",
+]
 LOGIN_URL_PARTS = ("/login", "/signin", "/sign-in", "accounts.google.com", "/oauth")
+
+
+def _automation_mode(p: dict) -> str:
+    if p.get("force_playwright") or p.get("automation") == "playwright_profile":
+        return "playwright_profile"
+    return Settings.load().browser_automation or "default_first"
+
+
+async def _screen_snapshot(chars: int = 4000) -> dict:
+    from . import screen
+
+    shot = await asyncio.get_event_loop().run_in_executor(None, screen.screenshot)
+    return {
+        "url": "",
+        "title": "",
+        "text": "",
+        "screenshot_b64": shot["screenshot_b64"],
+        "size": shot["size"],
+        "surface": "screen",
+        "interaction": "use cua kind for click/type/key on this window",
+    }
 
 
 class Browser:
@@ -20,31 +44,43 @@ class Browser:
         self.pw = None
         self.ctx = None
 
-    async def start(self):
+    async def start_playwright(self):
         if self.ctx:
             return
         from playwright.async_api import async_playwright
+
         PROFILE_DIR.mkdir(parents=True, exist_ok=True)
         self.pw = await async_playwright().start()
         try:
             self.ctx = await self.pw.chromium.launch_persistent_context(
-                str(PROFILE_DIR), channel="chrome", headless=False, no_viewport=True,
-                args=["--no-first-run", "--hide-crash-restore-bubble"], ignore_default_args=["--enable-automation"])
-        except Exception:  # Chrome not installed: fall back to Playwright's Chromium (run `playwright install chromium`)
+                str(PROFILE_DIR),
+                channel="chrome",
+                headless=False,
+                no_viewport=True,
+                args=["--no-first-run", "--hide-crash-restore-bubble"],
+                ignore_default_args=["--enable-automation"],
+            )
+        except Exception:
             self.ctx = await self.pw.chromium.launch_persistent_context(
-                str(PROFILE_DIR), headless=False, no_viewport=True, args=["--no-first-run"])
+                str(PROFILE_DIR), headless=False, no_viewport=True, args=["--no-first-run"]
+            )
         self.ctx.on("close", lambda *_: setattr(self, "ctx", None))
 
     async def page(self):
-        await self.start()
+        await self.start_playwright()
         pages = [p for p in self.ctx.pages if not p.is_closed()]
         return pages[0] if pages else await self.ctx.new_page()
 
     async def snapshot(self, page, chars=4000):
         shot = await page.screenshot(type="jpeg", quality=55)
         txt = await page.evaluate("() => document.body ? document.body.innerText : ''")
-        return {"url": page.url, "title": await page.title(), "text": (txt or "")[:chars],
-                "screenshot_b64": base64.b64encode(shot).decode()}
+        return {
+            "url": page.url,
+            "title": await page.title(),
+            "text": (txt or "")[:chars],
+            "screenshot_b64": base64.b64encode(shot).decode(),
+            "surface": "playwright_profile",
+        }
 
     async def status(self, page) -> str:
         for sel in CAPTCHA:
@@ -62,7 +98,38 @@ class Browser:
             pass
         return "done"
 
-    async def run(self, p: dict) -> dict:
+    async def run_default_first(self, p: dict) -> dict:
+        op = p.get("op") or "read"
+        url = p.get("url") or ""
+
+        if op in ("open", "navigate") and url:
+            open_url_default(url if url.startswith("http") else f"https://{url}")
+            await asyncio.sleep(float(p.get("settle_s") or 2.0))
+            snap = await _screen_snapshot()
+            snap["url"] = url
+            return {"status": "done", "result": snap}
+
+        if op == "read":
+            if url:
+                open_url_default(url if url.startswith("http") else f"https://{url}")
+                await asyncio.sleep(float(p.get("settle_s") or 2.0))
+            snap = await _screen_snapshot(8000)
+            if url:
+                snap["url"] = url
+            return {"status": "done", "result": snap}
+
+        if op in ("click", "type", "press", "fill", "hover", "scroll", "select", "search"):
+            snap = await _screen_snapshot()
+            return {
+                "status": "needs_human",
+                "error": "DOM automation disabled in default_first mode; send cua actions (screen) to click/type",
+                "result": snap,
+            }
+
+        snap = await _screen_snapshot()
+        return {"status": "done", "result": snap}
+
+    async def run_playwright(self, p: dict) -> dict:
         try:
             page = await self.page()
             op = p.get("op") or "read"
@@ -137,6 +204,12 @@ class Browser:
             return {"status": st, "result": await self.snapshot(page, 8000 if op == "read" else 4000)}
         except Exception as e:
             return {"status": "failed", "error": f"{type(e).__name__}: {e}"}
+
+    async def run(self, p: dict) -> dict:
+        mode = _automation_mode(p)
+        if mode == "default_first":
+            return await self.run_default_first(p)
+        return await self.run_playwright(p)
 
     async def close(self):
         if self.ctx:

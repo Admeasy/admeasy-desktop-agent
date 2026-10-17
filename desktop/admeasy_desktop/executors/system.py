@@ -39,23 +39,9 @@ async def shell(p: dict, cancel: asyncio.Event | None = None) -> dict:
 
 
 def open_target(p: dict) -> dict:
-    t = str(p.get("target") or "").strip()
-    if not t:
-        return {"status": "failed", "error": "target is required"}
-    path = os.path.expanduser(t)
-    if sys.platform == "darwin":
-        argv = ["open", path] if (os.path.exists(path) or "://" in t) else ["open", "-a", t]
-    elif sys.platform == "win32":
-        if os.path.exists(path) or "://" in t:
-            os.startfile(path)  # type: ignore[attr-defined]
-            return {"status": "done", "result": {"opened": t}}
-        argv = ["powershell", "-NoProfile", "-Command", f"Start-Process '{t}'"]
-    else:
-        argv = [shutil.which("xdg-open") or "xdg-open", path]
-    r = subprocess.run(argv, capture_output=True, text=True, timeout=20)
-    if r.returncode:
-        return {"status": "failed", "error": (r.stderr or "could not open").strip()[:300]}
-    return {"status": "done", "result": {"opened": t}}
+    from .app_launch import launch
+
+    return launch(str(p.get("target") or ""))
 
 
 def files(p: dict, roots) -> dict:
