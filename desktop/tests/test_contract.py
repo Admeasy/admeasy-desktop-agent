@@ -1,5 +1,3 @@
-import re
-
 from admeasy_desktop import auth
 from admeasy_desktop.agent import Agent
 from admeasy_desktop.config import Settings
