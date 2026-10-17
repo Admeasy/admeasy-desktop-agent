@@ -252,6 +252,7 @@ class Agent:
                         ),
                         "result": {"permissions_missing": ["accessibility"], "reason": "permission_missing"},
                     }
+            act_report: dict = {}
             if t not in (None, "screenshot"):
                 label = t
                 if a.get("element_id") is not None:
@@ -260,7 +261,7 @@ class Agent:
                     label = f"{t} @ {int(a.get('x'))},{int(a.get('y'))}"
                 await self.step(jid, label[:300], p.get("objective_id"))
                 try:
-                    await loop.run_in_executor(None, screen.act, a, self.scaler)
+                    act_report = await loop.run_in_executor(None, screen.act, a, self.scaler)
                 except ValueError as e:
                     return {"status": "error", "error": str(e), "result": {"reason": "bad_action"}}
                 except RuntimeError as e:
@@ -273,6 +274,9 @@ class Agent:
                 await asyncio.sleep(delay)
             shot = await loop.run_in_executor(None, screen.screenshot)
             self.scaler = screen.Scaler(tuple(screen._pg().size()), tuple(shot["size"]))
+            if act_report:
+                shot["last_action"] = act_report
+            shot.setdefault("elements", [])
             await self.step(
                 jid,
                 f"screenshot {shot['size'][0]}x{shot['size'][1]} ({len(shot.get('elements') or [])} marks)",

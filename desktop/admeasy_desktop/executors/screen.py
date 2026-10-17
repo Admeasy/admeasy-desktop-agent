@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 import sys
 import time
+
+log = logging.getLogger("admeasy-desktop")
 
 MAX_EDGE = 1280
 MAX_PIXELS = 1_150_000
@@ -46,7 +49,12 @@ def _use_quartz() -> bool:
         return False
 
 
-def _click_at(x: int, y: int, kind: str = "click") -> None:
+def _click_at(x: int, y: int, kind: str = "click") -> dict:
+    if sys.platform == "darwin" and not _use_quartz():
+        raise RuntimeError(
+            "Accessibility not granted — enable for Admeasy.app or your terminal in System Settings "
+            "(Privacy & Security → Accessibility)"
+        )
     if _use_quartz():
         from .. import input_darwin
 
@@ -58,16 +66,18 @@ def _click_at(x: int, y: int, kind: str = "click") -> None:
             input_darwin.click(x, y, button="middle")
         else:
             input_darwin.click(x, y)
-        if not input_darwin.verify_click(x, y):
+        ok = input_darwin.verify_click(x, y)
+        if not ok:
             raise RuntimeError(
                 "mouse click did not move the cursor — grant Accessibility to this app "
                 "(Terminal, iTerm, or Admeasy.app) in System Settings"
             )
-        return
+        return {"input": "quartz", "x": x, "y": y, "pointer_ok": ok}
     pg = _pg()
     pg.moveTo(x, y, duration=0.15)
     {"click": pg.click, "right_click": pg.rightClick, "double_click": pg.doubleClick,
      "middle_click": pg.middleClick}[kind]()
+    return {"input": "pyautogui", "x": x, "y": y, "pointer_ok": True}
 
 
 def _move_to(x: int, y: int) -> None:
@@ -95,10 +105,15 @@ def screenshot(monitor: int = 1, quality: int = 60, *, som: bool = True) -> dict
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=quality)
     shot = {"screenshot_b64": base64.b64encode(buf.getvalue()).decode(), "size": [sc.w, sc.h]}
+    logical = tuple(pg.size())
     if som:
         ax = a11y_tree.snapshot()
         if ax:
-            shot = som_mod.annotate_screenshot(shot, ax)
+            shot = som_mod.annotate_screenshot(shot, ax, logical_size=logical)
+        else:
+            shot["elements"] = []
+    else:
+        shot.setdefault("elements", [])
     return shot
 
 
@@ -131,7 +146,7 @@ def settle_seconds(action: dict) -> float:
     return 0.85
 
 
-def act(action: dict, scaler: Scaler | None = None) -> None:
+def act(action: dict, scaler: Scaler | None = None) -> dict:
     from ..config import Settings
     from .. import cursor_overlay
 
@@ -139,6 +154,7 @@ def act(action: dict, scaler: Scaler | None = None) -> None:
     t = action.get("type")
     sc = scaler or Scaler(tuple(pg.size()), tuple(pg.size()))
     show_cursor = Settings.load().show_agent_cursor
+    report: dict = {"type": t, "element_id": action.get("element_id") or action.get("mark")}
 
     def pt(prefix=""):
         return sc.to_logical(float(action[prefix + "x"]), float(action[prefix + "y"]))
@@ -151,24 +167,40 @@ def act(action: dict, scaler: Scaler | None = None) -> None:
         if flash:
             cursor_overlay.click_flash()
 
+    def _finish(extra: dict) -> dict:
+        report.update(extra)
+        log.info(
+            "cua act type=%s element_id=%s at=%s,%s input=%s pointer_ok=%s ax=%s",
+            report.get("type"),
+            report.get("element_id"),
+            report.get("x"),
+            report.get("y"),
+            report.get("input"),
+            report.get("pointer_ok"),
+            report.get("ax_ok"),
+        )
+        return report
+
     if t in ("click_mark",) or (t == "click" and (action.get("element_id") or action.get("mark")) is not None):
         from .. import som as som_mod
 
-        center = som_mod.center_for_mark(int(action.get("element_id") or action.get("mark") or 0))
+        eid = int(action.get("element_id") or action.get("mark") or 0)
+        center = som_mod.center_for_mark(eid)
         if not center:
             raise ValueError(f"unknown element_id {action.get('element_id')}")
         x, y = center
         _show(x, y, flash=True)
-        _click_at(x, y, "click")
-        return
+        click_info = _click_at(x, y, "click")
+        return _finish({**click_info, "element_id": eid, "ax_ok": False})
     if t in ("click", "right_click", "double_click", "middle_click"):
         x, y = pt()
         _show(x, y, flash=True)
-        _click_at(x, y, t)
+        return _finish({**_click_at(x, y, t), "ax_ok": False})
     elif t == "move":
         x, y = pt()
         _show(x, y)
         _move_to(x, y)
+        return _finish({"x": x, "y": y, "input": "quartz" if _use_quartz() else "pyautogui", "pointer_ok": True})
     elif t == "drag":
         fx, fy = sc.to_logical(float(action["from_x"]), float(action["from_y"]))
         tx, ty = pt()
@@ -183,20 +215,44 @@ def act(action: dict, scaler: Scaler | None = None) -> None:
         else:
             pg.moveTo(fx, fy, duration=0.1)
             pg.dragTo(tx, ty, duration=0.4, button="left")
+        return _finish({"x": tx, "y": ty, "input": "quartz" if _use_quartz() else "pyautogui", "pointer_ok": True})
     elif t == "type":
         eid = action.get("element_id") or action.get("mark")
+        click_info: dict = {"pointer_ok": True, "input": "quartz" if _use_quartz() else "pyautogui"}
         if eid is not None:
             from .. import som as som_mod
 
             center = som_mod.center_for_mark(int(eid))
             if center:
                 _show(center[0], center[1], flash=True)
-                _click_at(center[0], center[1], "click")
+                click_info = _click_at(center[0], center[1], "click")
                 time.sleep(0.12)
-        paste_text(str(action.get("text") or ""))
+            else:
+                raise ValueError(f"unknown element_id {eid}")
+        text = str(action.get("text") or "")
+        paste_text(text)
+        return _finish(
+            {
+                **click_info,
+                "element_id": eid,
+                "typed_len": len(text),
+                "ax_ok": False,
+                "pointer_ok": True,
+            }
+        )
     elif t == "key":
         keys = parse_key(action.get("key") or "enter")
-        pg.hotkey(*keys) if len(keys) > 1 else pg.press(keys[0])
+        if _use_quartz() and len(keys) == 1:
+            from .. import input_darwin
+
+            input_darwin.key_combo([], keys[0])
+        elif _use_quartz() and len(keys) > 1:
+            from .. import input_darwin
+
+            input_darwin.key_combo(keys[:-1], keys[-1])
+        else:
+            pg.hotkey(*keys) if len(keys) > 1 else pg.press(keys[0])
+        return _finish({"input": "quartz" if _use_quartz() else "pyautogui", "key": action.get("key"), "pointer_ok": True})
     elif t == "scroll":
         sx, sy = pt() if action.get("x") is not None else (None, None)
         dy = int(action.get("dy") or 0)
@@ -213,6 +269,16 @@ def act(action: dict, scaler: Scaler | None = None) -> None:
                 pg.scroll(-dy // 10 if sys.platform != "darwin" else -dy // 20)
             if dx:
                 pg.hscroll(dx // 10)
+        return _finish(
+            {
+                "x": sx,
+                "y": sy,
+                "dy": dy,
+                "dx": dx,
+                "input": "quartz" if _use_quartz() else "pyautogui",
+                "pointer_ok": True,
+            }
+        )
     elif t in ("ax_press", "ax_type"):
         from .. import som as som_mod
 
@@ -220,29 +286,58 @@ def act(action: dict, scaler: Scaler | None = None) -> None:
         center = som_mod.center_for_mark(eid)
         if center:
             _show(center[0], center[1], flash=True)
-        if sys.platform == "darwin" and (som_mod.LAST_ELEMENTS.get(eid) or {}).get("name"):
+        ax_ok = False
+        if sys.platform == "darwin" and center:
             import subprocess
 
             if t == "ax_type":
+                click_info = _click_at(center[0], center[1], "click")
                 paste_text(str(action.get("text") or ""))
-            elif center:
-                subprocess.run(
-                    [
-                        "osascript",
-                        "-e",
-                        f'tell application "System Events" to click at {{{center[0]}, {center[1]}}}',
-                    ],
-                    check=False,
-                    timeout=5,
+                return _finish(
+                    {
+                        **click_info,
+                        "element_id": eid,
+                        "ax_ok": True,
+                        "typed_len": len(str(action.get("text") or "")),
+                    }
                 )
+            proc = subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    f'tell application "System Events" to click at {{{center[0]}, {center[1]}}}',
+                ],
+                check=False,
+                timeout=5,
+                capture_output=True,
+            )
+            if proc.returncode == 0:
+                return _finish(
+                    {
+                        "element_id": eid,
+                        "ax_ok": True,
+                        "x": center[0],
+                        "y": center[1],
+                        "input": "osascript",
+                        "pointer_ok": True,
+                    }
+                )
+            click_info = _click_at(center[0], center[1], "click")
+            return _finish({**click_info, "element_id": eid, "ax_ok": False})
         elif center:
             if t == "ax_type":
-                _click_at(center[0], center[1], "click")
+                click_info = _click_at(center[0], center[1], "click")
                 paste_text(str(action.get("text") or ""))
-            else:
-                _click_at(center[0], center[1], "click")
+                return _finish({**click_info, "element_id": eid, "ax_ok": False})
+            click_info = _click_at(center[0], center[1], "click")
+            return _finish({**click_info, "element_id": eid, "ax_ok": False})
+        return _finish({"element_id": eid, "ax_ok": ax_ok, "pointer_ok": True})
     elif t == "wait":
         time.sleep(min(float(action.get("seconds") or 1), 10))
+        return _finish({"input": "sleep", "pointer_ok": True})
+    elif t in (None, "screenshot"):
+        return _finish({"input": "none", "pointer_ok": True})
+    return _finish({"input": "unknown", "pointer_ok": True})
 
 
 def paste_text(text: str) -> None:

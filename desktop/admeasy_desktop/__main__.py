@@ -86,7 +86,48 @@ def cmd_run(background: bool) -> None:
         threading.Event().wait()
 
 
-def cmd_doctor() -> int:
+def cmd_click_test() -> int:
+    """Move to screen center, click once, flash AppKit/Tk overlay — verifies Accessibility + coords."""
+    from . import cursor_overlay
+    from .executors import screen
+
+    ok = True
+
+    def line(name, good, detail=""):
+        nonlocal ok
+        ok &= bool(good)
+        print(f"[{'ok' if good else 'FAIL'}] {name}{(' - ' + detail) if detail else ''}")
+
+    if sys.platform == "darwin":
+        from . import input_darwin
+
+        if not input_darwin.accessibility_trusted():
+            line("click-test", False, "grant Accessibility first (see doctor permission lines)")
+            return 1
+    pg = screen._pg()
+    w, h = pg.size()
+    cx, cy = w // 2, h // 2
+    try:
+        info = screen._click_at(cx, cy, "click")
+        line("center click", True, f"{info}")
+    except Exception as e:
+        line("center click", False, str(e))
+        return 1
+    cursor_overlay.set_enabled(True)
+    cursor_overlay.move_to(cx, cy)
+    cursor_overlay.click_flash()
+    if sys.platform == "darwin":
+        from . import input_darwin
+
+        px, py = input_darwin.pointer_position()
+        line("cursor position", abs(px - cx) <= 12 and abs(py - cy) <= 12, f"pointer at {px},{py} expected ~{cx},{cy}")
+    line("overlay", cursor_overlay.is_available(), "pink ring at click point (hides after idle)")
+    return 0 if ok else 1
+
+
+def cmd_doctor(click_test: bool = False) -> int:
+    if click_test:
+        return cmd_click_test()
     s = Settings.load()
     ok = True
 
@@ -171,14 +212,16 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd")
     r = sub.add_parser("run")
     r.add_argument("--background", action="store_true")
-    for n in ("login", "doctor", "devices", "logout"):
+    doc = sub.add_parser("doctor")
+    doc.add_argument("--click-test", action="store_true", help="click screen center + verify overlay")
+    for n in ("login", "devices", "logout"):
         sub.add_parser(n)
     a = ap.parse_args()
     s = Settings.load()
     if a.cmd in (None, "run"):
         cmd_run(getattr(a, "background", False))
     elif a.cmd == "doctor":
-        sys.exit(cmd_doctor())
+        sys.exit(cmd_doctor(click_test=getattr(a, "click_test", False)))
     elif a.cmd == "login":
         from .agent import Agent
         t = auth.login_via_browser(s.backend)
