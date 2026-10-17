@@ -23,19 +23,22 @@ DEVICE_TOOL_SCHEMAS = [
                        "first when the user says 'my computer', 'my MacBook', 'my laptop' or 'my PC'.",
         "parameters": {"type": "object", "properties": {}}}},
     _fn("device_use_computer",
-        "Do a task on the user's REAL computer by looking at its screen and using mouse and keyboard, as a person would: "
-        "open any app (Chrome, Slack, Cursor, VS Code, Terminal, Claude, WhatsApp, Finder), click, type, scroll, switch "
-        "windows. Runs a screenshot, decide, act loop. Describe the goal in plain words. Returns the final answer and "
-        "what was done. Prefer device_browser for pure web pages and device_shell for plain commands.",
-        {"goal": {"type": "string"}, "max_steps": {"type": "integer", "minimum": 1, "maximum": 40}}, ["goal"]),
+        "Objective-oriented control of the user's REAL computer: screenshot with numbered UI elements (set-of-mark) plus "
+        "accessibility tree when permitted. Prefer clicking element_id from the last frame instead of raw x,y. Opens apps "
+        "via the OS (Dock/Launchpad/Start), uses the default browser with existing logins, types and scrolls on screen. "
+        "Runs an internal screenshot→act loop until done or needs_login. Use device_open first to launch an app or URL. "
+        "Use device_browser only for isolated Playwright automation when DOM selectors are enough.",
+        {"goal": {"type": "string"}, "max_steps": {"type": "integer", "minimum": 1, "maximum": 40},
+         "objective_id": {"type": "string", "description": "Optional durable objective id from the orchestrator."}}, ["goal"]),
     _fn("device_screenshot", "Take a screenshot of the user's computer screen now.", {}),
     _fn("device_open",
         "Open an app by name, a file or folder by path, or a URL in the user's default browser on their computer.",
         {"target": {"type": "string", "description": "App name (Slack), path (~/Downloads) or URL."}}, ["target"]),
     _fn("device_browser",
-        "Drive the user's own Chrome (their real profile: logged-in sessions, cookies, extensions) with Playwright. "
-        "ops: open, navigate, click, type, press, scroll, read, screenshot, search. Cheaper and more reliable than "
-        "pixel clicking for web pages. Returns the page title, url, visible text and a screenshot.",
+        "DOM automation in an isolated Admeasy Chrome profile OR default-browser read via screen capture (desktop "
+        "browser_automation=default_first). For logged-in sites in the user's everyday browser, prefer device_open(url) "
+        "then device_use_computer with element_id. ops: open, navigate, click, type, press, scroll, read, screenshot, "
+        "search. Set force_playwright on the desktop params only when an empty automation profile is intended.",
         {"op": {"type": "string", "enum": ["open", "navigate", "click", "type", "press", "scroll", "read",
                                            "screenshot", "search"]},
          "url": {"type": "string"}, "selector": {"type": "string"}, "text": {"type": "string"},

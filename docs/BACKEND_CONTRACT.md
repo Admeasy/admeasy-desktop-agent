@@ -2,7 +2,7 @@
 
 Canonical server implementation: **admeasy-ai-assistant** `main` (device tools in `app/devices/tools.py`). The desktop app targets that API. If `GET /devices` returns **404**, the host has not been redeployed yet; **503** means `DEVICES_ENABLED=false`.
 
-Desktop package version **0.3.1-beta** advertises **15 job kinds** (see below). Each backend `device_*` tool maps to one kind + `params.op` (and tool-specific fields). See [COMPUTER_USE.md](COMPUTER_USE.md) for native-app vs browser vs CUA routing.
+Desktop package version **0.3.2-beta** advertises **15 job kinds** (see below). The LLM picks `device_*` tools; see [COMPUTER_USE.md](COMPUTER_USE.md) and [WORKFLOW_DIAGNOSIS.md](WORKFLOW_DIAGNOSIS.md). Screenshots may include **set-of-mark** `elements[]` and `ax_tree` when accessibility is granted.
 
 ## Enablement
 

@@ -35,9 +35,12 @@ def _pg():
     return pyautogui
 
 
-def screenshot(monitor: int = 1, quality: int = 60) -> dict:
+def screenshot(monitor: int = 1, quality: int = 60, *, som: bool = True) -> dict:
     import mss
     from PIL import Image
+
+    from .. import a11y_tree, som as som_mod
+
     pg = _pg()
     with mss.mss() as sct:
         mon = sct.monitors[min(monitor, len(sct.monitors) - 1)]
@@ -47,7 +50,12 @@ def screenshot(monitor: int = 1, quality: int = 60) -> dict:
     img = img.resize((sc.w, sc.h), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=quality)
-    return {"screenshot_b64": base64.b64encode(buf.getvalue()).decode(), "size": [sc.w, sc.h]}
+    shot = {"screenshot_b64": base64.b64encode(buf.getvalue()).decode(), "size": [sc.w, sc.h]}
+    if som:
+        ax = a11y_tree.snapshot()
+        if ax:
+            shot = som_mod.annotate_screenshot(shot, ax)
+    return shot
 
 
 _KEYS = {"return": "enter", "ctrl": "ctrl", "control": "ctrl", "super": "command" if sys.platform == "darwin" else "win",
@@ -81,6 +89,17 @@ def act(action: dict, scaler: Scaler | None = None) -> None:
         if flash:
             cursor_overlay.click_flash()
 
+    if t in ("click_mark",) or (t == "click" and (action.get("element_id") or action.get("mark")) is not None):
+        from .. import som as som_mod
+
+        center = som_mod.center_for_mark(int(action.get("element_id") or action.get("mark") or 0))
+        if not center:
+            raise ValueError(f"unknown element_id {action.get('element_id')}")
+        x, y = center
+        _show(x, y, flash=True)
+        pg.moveTo(x, y, duration=0.15)
+        pg.click()
+        return
     if t in ("click", "right_click", "double_click", "middle_click"):
         x, y = pt()
         _show(x, y, flash=True)

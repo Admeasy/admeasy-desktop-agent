@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 # Anthropic computer-tool action names -> the desktop agent's action vocabulary (same names, normalised).
 ACTIONS = {"left_click": "click", "click": "click", "right_click": "right_click", "double_click": "double_click",
            "middle_click": "middle_click", "mouse_move": "move", "left_click_drag": "drag", "type": "type",
-           "key": "key", "scroll": "scroll", "wait": "wait", "screenshot": "screenshot"}
+           "key": "key", "scroll": "scroll", "wait": "wait", "screenshot": "screenshot", "click_mark": "click_mark"}
 
 
 def to_action(tool_input: dict) -> dict:
@@ -43,44 +43,51 @@ def to_action(tool_input: dict) -> dict:
         out["dx"] = (-n if d == "left" else n) * 100 if d in ("left", "right") else 0
     if t == "wait":
         out["seconds"] = min(float(tool_input.get("duration") or 1), 10)
+    if tool_input.get("element_id") is not None or tool_input.get("mark") is not None:
+        out["type"] = "click_mark"
+        out["element_id"] = int(tool_input.get("element_id") or tool_input.get("mark"))
     return out
 
 
 PROMPT = ("You control the user's own computer through its screen. GOAL: {goal}\n"
-          "Screen size (w,h): {size}. Actions so far: {history}\n"
-          "Take ONE step. If the task needs a sign-in, a captcha, a payment or a password you do not have, answer "
-          "{{\"type\":\"needs_login\"}}. When the goal is met answer {{\"type\":\"done\",\"answer\":\"<result>\"}}. "
-          "Reply with one JSON object only: {{\"type\":\"click|right_click|double_click|move|drag|type|key|scroll|wait|"
-          "screenshot|done|needs_login\",\"x\":..,\"y\":..,\"text\":..,\"key\":..,\"dy\":..}}")
+          "Screen size (w,h): {size}. UI elements (set-of-mark): {elements}\nActions so far: {history}\n"
+          "Prefer {{\"element_id\":<number>}} to click numbered pink marks; use x,y only if no mark fits. "
+          "If the task needs sign-in, captcha, payment or an unknown password, answer {{\"type\":\"needs_login\"}}. "
+          "When the goal is met answer {{\"type\":\"done\",\"answer\":\"<result>\"}}. "
+          "One JSON object only: {{\"type\":\"click_mark|click|type|key|scroll|wait|screenshot|done|needs_login\","
+          "\"element_id\":..,\"x\":..,\"y\":..,\"text\":..,\"key\":..,\"dy\":..}}")
 
 
 class ComputerUse:
     def __init__(self, svc, settings=None):
         self.svc, self.settings = svc, settings
 
-    async def plan(self, goal: str, shot_b64: str, size: list, history: list) -> dict:
+    async def plan(self, goal: str, shot_b64: str, size: list, history: list, elements: list | None = None) -> dict:
+        elements = elements or []
         ep = resolve_vm_vision(settings=self.settings)
         if not vision_ready(ep):
             raise RuntimeError("no vision provider configured (Bedrock AWS credentials or VM_VISION_API_KEY)")
         if ep.provider == "bedrock":
             try:
-                return await self._bedrock(ep, goal, shot_b64, size, history)
+                return await self._bedrock(ep, goal, shot_b64, size, history, elements)
             except Exception as e:
                 log.info("native computer-use call failed, falling back to JSON vision: %s", e)
-        raw = await vision_complete(ep, PROMPT.format(goal=goal, size=size, history=json.dumps(history[-6:])),
+        raw = await vision_complete(ep, PROMPT.format(goal=goal, size=size, elements=json.dumps(elements[-24:]),
+                                                    history=json.dumps(history[-6:])),
                                     shot_b64, max_tokens=300)
         try:
             return to_action(json.loads(raw[raw.find("{"): raw.rfind("}") + 1]))
         except ValueError:
             return {"type": "screenshot"}
 
-    async def _bedrock(self, ep, goal, shot_b64, size, history) -> dict:
+    async def _bedrock(self, ep, goal, shot_b64, size, history, elements: list) -> dict:
         import asyncio
 
         import boto3
         client = boto3.client("bedrock-runtime", region_name=ep.region)
         msgs = [{"role": "user", "content": [
-            {"text": PROMPT.format(goal=goal, size=size, history=json.dumps(history[-6:]))},
+            {"text": PROMPT.format(goal=goal, size=size, elements=json.dumps(elements[-24:]),
+                                   history=json.dumps(history[-6:]))},
             {"image": {"format": "jpeg", "source": {"bytes": base64.b64decode(shot_b64)}}}]}]
         tools = {"tools": [{"toolSpec": {"name": "computer", "description": "Control the computer screen.",
                  "inputSchema": {"json": {"type": "object", "required": ["action"], "properties": {
@@ -122,7 +129,7 @@ class ComputerUse:
                 return {"status": "failed", "error": "no screenshot from the computer", "steps": history}
             if on_frame:
                 await on_frame(user_id, shot)
-            action = await self.plan(goal, shot, res.get("size") or [1280, 800], history)
+            action = await self.plan(goal, shot, res.get("size") or [1280, 800], history, res.get("elements") or [])
             history.append({k: v for k, v in action.items() if k != "text" or len(str(v)) < 80})
             if action["type"] == "done":
                 return {"status": "done", "answer": action.get("answer", ""), "steps": history}

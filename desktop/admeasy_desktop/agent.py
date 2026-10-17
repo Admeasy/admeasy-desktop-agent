@@ -11,6 +11,7 @@ import json
 import logging
 import platform
 import random
+import sys
 import uuid
 
 import websockets
@@ -58,6 +59,8 @@ class Agent:
             "browser_modes": ["default_first", "playwright_profile"],
             "native_apps": True,
             "agent_cursor_overlay": self.s.show_agent_cursor,
+            "set_of_mark": True,
+            "ax_tree": sys.platform == "darwin",
             "objectives": {"echo_objective_id": True},
             "shell": True,
             "terminal": True,
