@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Admeasy Browser Bridge",
+  "version": "0.4.0",
+  "description": "Structured DOM access for Admeasy desktop agent (user profile).",
+  "permissions": ["tabs", "scripting", "nativeMessaging", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Admeasy" }
+}

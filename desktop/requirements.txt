@@ -10,6 +10,8 @@ keyring>=25,<26            # macOS Keychain / Windows Credential Locker for toke
 pywebview>=5.0,<6          # the plain login + devices window
 pystray>=0.19,<1           # menu-bar / tray icon (pause, quit), optional at runtime
 psutil>=5.9,<8
+openpyxl>=3.1,<4
+uiautomation>=2.0,<3; sys_platform == "win32"
 # macOS only (permission checks: Screen Recording, Accessibility)
 pyobjc-framework-Quartz>=10; sys_platform == "darwin"
 pyobjc-framework-ApplicationServices>=10; sys_platform == "darwin"

@@ -88,4 +88,12 @@ def wire_snapshot() -> dict:
         "screen": bool(p.get("screen")),
         "accessibility": bool(p.get("accessibility")),
         "full_disk": can_read_full_disk(),
+        "automation": bool(p.get("accessibility")),
     }
+
+
+def missing_all(perms: dict) -> list[str]:
+    out = missing({k: perms.get(k) for k in ("screen", "accessibility")})
+    if not perms.get("full_disk"):
+        out.append("full_disk")
+    return out

@@ -106,6 +106,18 @@ def files(p: dict, roots) -> dict:
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         shutil.move(path, dest)
         return {"status": "done", "result": {"moved": path, "dest": dest}}
+    if op == "append_rows":
+        from ..artifacts import append_rows
+
+        fmt = str(p.get("format") or "csv")
+        rows = p.get("rows") or []
+        r = append_rows(path, rows, roots, fmt)
+        return {"status": "ok" if r.get("status") == "ok" else "error", "result": r, "error": r.get("reason")}
+    if op == "upload_artifact":
+        from ..artifacts import upload_presigned
+
+        r = upload_presigned(str(p.get("upload_url") or ""), path, roots, p.get("content_type"))
+        return {"status": "ok" if r.get("status") == "ok" else "error", "result": r, "error": r.get("reason")}
     if op == "search":
         needle = str(p.get("query") or "").lower()
         hits = []

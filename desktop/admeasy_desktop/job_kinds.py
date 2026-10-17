@@ -20,6 +20,8 @@ JOB_KINDS = frozenset(
         "messages",
         "comms",
         "mail",
+        "status",
+        "signin",
     }
 )
 
@@ -31,4 +33,5 @@ TOOL_MANIFEST: list[dict] = [
     {"group": "files", "kinds": ["files", "clipboard"]},
     {"group": "apps", "kinds": ["app", "ide"]},
     {"group": "messaging", "kinds": ["whatsapp", "messages", "mail", "comms"]},
+    {"group": "surface", "kinds": ["status", "signin"]},
 ]

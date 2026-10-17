@@ -6,6 +6,7 @@ import io
 from typing import Any
 
 LAST_ELEMENTS: dict[int, dict[str, Any]] = {}
+FRAME_SEQ = 0
 
 
 def _clickable(el: dict) -> bool:
@@ -20,8 +21,10 @@ def annotate_screenshot(shot: dict, ax_elements: list[dict], logical_size: tuple
     """Return shot with numbered marks; clicks use logical screen coordinates."""
     from PIL import Image, ImageDraw, ImageFont
 
-    global LAST_ELEMENTS
+    global LAST_ELEMENTS, FRAME_SEQ
     LAST_ELEMENTS = {}
+    FRAME_SEQ += 1
+    frame_id = f"f{FRAME_SEQ}"
     raw = base64.b64decode(shot["screenshot_b64"])
     img = Image.open(io.BytesIO(raw)).convert("RGB")
     sw, sh = img.size
@@ -46,9 +49,25 @@ def annotate_screenshot(shot: dict, ax_elements: list[dict], logical_size: tuple
         x, y = int(lx * sx), int(ly * sy)
         w, h = max(4, int(bw * sx)), max(4, int(bh * sy))
         icx, icy = x + w // 2, y + h // 2
-        LAST_ELEMENTS[i] = {"cx": cx, "cy": cy, "mark": i, "role": el.get("role"), "name": el.get("name")}
+        stable = f"{frame_id}:{i}"
+        LAST_ELEMENTS[i] = {
+            "cx": cx,
+            "cy": cy,
+            "mark": i,
+            "stable_id": stable,
+            "role": el.get("role"),
+            "name": el.get("name"),
+        }
         elements.append(
-            {"id": i, "role": el.get("role"), "name": el.get("name"), "bounds": [lx, ly, bw, bh], "center": [cx, cy]}
+            {
+                "id": i,
+                "stable_id": stable,
+                "frame_id": frame_id,
+                "role": el.get("role"),
+                "name": el.get("name"),
+                "bounds": [lx, ly, bw, bh],
+                "center": [cx, cy],
+            }
         )
         draw.rectangle([x, y, x + w, y + h], outline="#ff2d95", width=2)
         draw.ellipse([icx - 10, icy - 10, icx + 10, icy + 10], fill="#ff2d95")
@@ -61,6 +80,7 @@ def annotate_screenshot(shot: dict, ax_elements: list[dict], logical_size: tuple
     out["elements"] = elements
     out["ax_tree"] = ax_elements[:80]
     out["som"] = True
+    out["frame_id"] = frame_id
     return out
 
 

@@ -6,6 +6,10 @@ from typing import Any
 
 
 def snapshot(max_nodes: int = 80) -> list[dict[str, Any]]:
+    if sys.platform == "win32":
+        from .a11y_win import snapshot as win_snap
+
+        return win_snap(max_nodes)
     if sys.platform != "darwin":
         return []
     try:

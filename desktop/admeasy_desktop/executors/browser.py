@@ -1,21 +1,31 @@
-"""Browser automation: default-first (your browser + screen/CUA) or optional isolated Playwright profile."""
+"""Browser: extension bridge (logged-in profile) → default_first screen → optional Playwright profile."""
 from __future__ import annotations
 
 import asyncio
 import base64
-import sys
 
 from ..config import PROFILE_DIR, Settings
+from ..failure_detect import analyze as detect_failure
+from ..browser_bridge import extension_status, run_browser_op
+from ..pacing import wait_if_needed
 from .app_launch import open_url_default
 
-CAPTCHA = [
-    "iframe[src*='challenges.cloudflare.com']",
-    "iframe[src*='recaptcha']",
-    "iframe[src*='hcaptcha']",
-    "text=Verify you are human",
-    "#challenge-form",
-]
-LOGIN_URL_PARTS = ("/login", "/signin", "/sign-in", "accounts.google.com", "/oauth")
+STRUCTURED_OPS = frozenset(
+    {
+        "list_tabs",
+        "open_tab",
+        "navigate",
+        "read_page",
+        "extract",
+        "query_elements",
+        "click_element",
+        "type_element",
+        "scroll",
+        "wait_for",
+        "screenshot_tab",
+        "close_tab",
+    }
+)
 
 
 def _automation_mode(p: dict) -> str:
@@ -24,25 +34,36 @@ def _automation_mode(p: dict) -> str:
     return Settings.load().browser_automation or "default_first"
 
 
-async def _screen_snapshot(chars: int = 4000) -> dict:
+async def _screen_snapshot(chars: int = 4000, skill_hints: list | None = None) -> dict:
     from . import screen
 
+    from .. import a11y_tree
+
     shot = await asyncio.get_event_loop().run_in_executor(None, screen.screenshot)
-    return {
+    ax = a11y_tree.snapshot()
+    fail = detect_failure(ax, skill_hints=skill_hints)
+    body = {
         "url": "",
         "title": "",
         "text": "",
         "screenshot_b64": shot["screenshot_b64"],
         "size": shot["size"],
-        "surface": "screen",
-        "interaction": "use cua kind for click/type/key on this window",
+        "surface": "default_browser",
+        "interaction": "use cua with element_id from elements[]",
+        "elements": shot.get("elements") or [],
+        "ax_tree": shot.get("ax_tree") or ax,
+        "extension_installed": extension_status().get("installed"),
     }
+    if fail:
+        body["detected"] = fail
+    return body, fail
 
 
 class Browser:
     def __init__(self):
         self.pw = None
         self.ctx = None
+        self._tab_sem = asyncio.Semaphore(3)
 
     async def start_playwright(self):
         if self.ctx:
@@ -71,68 +92,93 @@ class Browser:
         pages = [p for p in self.ctx.pages if not p.is_closed()]
         return pages[0] if pages else await self.ctx.new_page()
 
-    async def snapshot(self, page, chars=4000):
+    async def snapshot(self, page, chars=4000, skill_hints=None):
         shot = await page.screenshot(type="jpeg", quality=55)
         txt = await page.evaluate("() => document.body ? document.body.innerText : ''")
-        return {
+        from .. import a11y_tree
+
+        ax = a11y_tree.snapshot()
+        fail = detect_failure(ax, skill_hints=skill_hints)
+        body = {
             "url": page.url,
             "title": await page.title(),
             "text": (txt or "")[:chars],
             "screenshot_b64": base64.b64encode(shot).decode(),
             "surface": "playwright_profile",
+            "ax_tree": ax,
         }
+        if fail:
+            body["detected"] = fail
+        return body, fail
 
-    async def status(self, page) -> str:
-        for sel in CAPTCHA:
-            try:
-                if await page.locator(sel).first.is_visible(timeout=300):
-                    return "needs_human"
-            except Exception:
-                pass
-        if any(k in (page.url or "") for k in LOGIN_URL_PARTS):
-            return "needs_login"
-        try:
-            if await page.locator("input[type='password']").first.is_visible(timeout=250):
-                return "needs_login"
-        except Exception:
-            pass
-        return "done"
+    async def run_structured(self, p: dict) -> dict:
+        domain = str(p.get("domain") or "")
+        wait_if_needed(domain, p.get("rate_limit_hints"))
+        async with self._tab_sem:
+            raw = await run_browser_op(p)
+        if raw is None:
+            return {"status": "needs_human", "error": "extension_not_installed", "result": {"extension_installed": False}}
+        st = raw.get("status") or "ok"
+        if st == "timeout":
+            return {"status": "timeout", "error": raw.get("reason"), "result": raw}
+        if st == "error":
+            return {"status": "error", "error": raw.get("reason"), "result": raw}
+        return {"status": "ok", "result": {**raw, "surface": "browser_extension", "extension_installed": True}}
 
     async def run_default_first(self, p: dict) -> dict:
         op = p.get("op") or "read"
         url = p.get("url") or ""
+        hints = p.get("skill_hints") or []
+
+        if op in STRUCTURED_OPS:
+            bridged = await self.run_structured(p)
+            if bridged.get("status") != "needs_human" or bridged.get("error") != "extension_not_installed":
+                return bridged
 
         if op in ("open", "navigate") and url:
             open_url_default(url if url.startswith("http") else f"https://{url}")
             await asyncio.sleep(float(p.get("settle_s") or 2.0))
-            snap = await _screen_snapshot()
+            snap, fail = await _screen_snapshot(skill_hints=hints)
             snap["url"] = url
-            return {"status": "done", "result": snap}
+            if fail and fail.get("status") == "captcha":
+                return {"status": "captcha", "error": fail.get("reason"), "result": snap}
+            if fail:
+                return {"status": fail.get("status", "needs_human"), "error": fail.get("reason"), "result": snap}
+            return {"status": "ok", "result": snap}
 
         if op == "read":
             if url:
                 open_url_default(url if url.startswith("http") else f"https://{url}")
                 await asyncio.sleep(float(p.get("settle_s") or 2.0))
-            snap = await _screen_snapshot(8000)
+            snap, fail = await _screen_snapshot(8000, hints)
             if url:
                 snap["url"] = url
-            return {"status": "done", "result": snap}
+            if fail and fail.get("status") == "captcha":
+                return {"status": "captcha", "error": fail.get("reason"), "result": snap}
+            if fail:
+                return {"status": fail.get("status", "needs_login"), "error": fail.get("reason"), "result": snap}
+            return {"status": "ok", "result": snap}
 
         if op in ("click", "type", "press", "fill", "hover", "scroll", "select", "search"):
-            snap = await _screen_snapshot()
+            snap, fail = await _screen_snapshot(skill_hints=hints)
+            if fail and fail.get("status") == "captcha":
+                return {"status": "captcha", "error": fail.get("reason"), "result": snap}
             return {
                 "status": "needs_human",
-                "error": "DOM automation disabled in default_first mode; send cua actions (screen) to click/type",
+                "error": "use_cua_or_extension",
                 "result": snap,
             }
 
-        snap = await _screen_snapshot()
-        return {"status": "done", "result": snap}
+        snap, _ = await _screen_snapshot(skill_hints=hints)
+        return {"status": "ok", "result": snap}
 
     async def run_playwright(self, p: dict) -> dict:
+        hints = p.get("skill_hints") or []
         try:
             page = await self.page()
             op = p.get("op") or "read"
+            if op in STRUCTURED_OPS:
+                return await self.run_structured(p)
             if op in ("open", "navigate") and p.get("url"):
                 await page.goto(p["url"], wait_until="domcontentloaded", timeout=45000)
             elif op == "navigate" and p.get("direction") == "back":
@@ -178,7 +224,7 @@ class Browser:
                 sub = p.get("subop") or "list"
                 if sub == "list":
                     tabs = [{"index": i, "url": pg.url, "title": await pg.title()} for i, pg in enumerate(self.ctx.pages)]
-                    return {"status": "done", "result": {"tabs": tabs}}
+                    return {"status": "ok", "result": {"tabs": tabs}}
                 if sub == "new":
                     await self.ctx.new_page()
                 elif sub == "close" and self.ctx.pages:
@@ -191,21 +237,28 @@ class Browser:
                 data = await page.pdf() if hasattr(page, "pdf") else b""
                 import base64 as b64
 
-                return {"status": "done", "result": {"pdf_b64": b64.b64encode(data).decode() if data else ""}}
+                return {"status": "ok", "result": {"pdf_b64": b64.b64encode(data).decode() if data else ""}}
             elif op == "download":
                 with page.expect_download(timeout=int(p.get("timeout_ms") or 60000)) as dl_info:
                     if p.get("selector"):
                         await page.locator(p["selector"]).first.click()
                 dl = await dl_info.value
                 path = await dl.path()
-                return {"status": "done", "result": {"path": path, "suggested_filename": dl.suggested_filename}}
+                return {"status": "ok", "result": {"path": path, "suggested_filename": dl.suggested_filename}}
             await page.wait_for_timeout(400)
-            st = await self.status(page)
-            return {"status": st, "result": await self.snapshot(page, 8000 if op == "read" else 4000)}
+            snap, fail = await self.snapshot(page, 8000 if op == "read" else 4000, hints)
+            if fail and fail.get("status") == "captcha":
+                return {"status": "captcha", "error": fail.get("reason"), "result": snap}
+            if fail:
+                return {"status": fail.get("status", "needs_login"), "error": fail.get("reason"), "result": snap}
+            return {"status": "ok", "result": snap}
         except Exception as e:
-            return {"status": "failed", "error": f"{type(e).__name__}: {e}"}
+            return {"status": "error", "error": f"{type(e).__name__}: {e}"}
 
     async def run(self, p: dict) -> dict:
+        pool = int(p.get("tab_pool_size") or 0)
+        if pool > 0:
+            self._tab_sem = asyncio.Semaphore(max(1, min(pool, 12)))
         mode = _automation_mode(p)
         if mode == "default_first":
             return await self.run_default_first(p)
