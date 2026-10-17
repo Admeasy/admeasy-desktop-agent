@@ -16,6 +16,6 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
   pip install 'pyobjc-framework-Quartz>=10' 'pyobjc-framework-ApplicationServices>=10' || true
 fi
 echo ""
-echo "Done. Activate with: source desktop/.venv/bin/activate"
+echo "Done. From this directory: source .venv/bin/activate"
 echo "Set backend: export ADMEASY_BACKEND=https://admeasy-backend.6h5y8j39qxdcg.ap-south-1.cs.amazonlightsail.com"
 echo "Then: python -m admeasy_desktop doctor && python -m admeasy_desktop run"

@@ -1,4 +1,5 @@
 from admeasy_desktop import auth
+from admeasy_desktop.api import devices_api_state
 from admeasy_desktop.agent import Agent
 from admeasy_desktop.config import Settings
 from admeasy_desktop.permissions import wire_snapshot
@@ -22,6 +23,10 @@ def test_hello_wire_fields():
              "permissions": wire_snapshot()}
     assert set(hello) >= {"type", "version", "os_version", "capabilities", "permissions"}
     assert set(hello["permissions"]) <= {"screen", "accessibility"}
+
+
+def test_devices_api_state_interpretation():
+    assert devices_api_state("http://127.0.0.1:1") == "unreachable"
 
 
 def test_approval_request_field_limits():

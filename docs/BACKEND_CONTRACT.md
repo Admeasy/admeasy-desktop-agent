@@ -1,6 +1,6 @@
 # Backend contract (desktop client)
 
-Canonical server implementation: [admeasy-ai-assistant PR #42](https://github.com/Admeasy/admeasy-ai-assistant/pull/42) (`cursor/desktop-devices-backend-2629`). The desktop app in this repo targets that API exactly.
+Canonical server implementation: merged to **admeasy-ai-assistant** `main` ([PR #42](https://github.com/Admeasy/admeasy-ai-assistant/pull/42)). The desktop app targets that API. If `GET /devices` returns **404**, the Lightsail (or other) host has not been redeployed yet; **503** means `DEVICES_ENABLED=false`.
 
 ## Enablement
 

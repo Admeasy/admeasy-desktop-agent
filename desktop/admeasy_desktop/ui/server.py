@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 
 from .. import auth, permissions, system_hooks
-from ..api import DEVICES_DISABLED, DevicesDisabledError, raise_for_devices
+from ..api import DEVICES_DISABLED, DEVICES_NOT_DEPLOYED, DevicesDisabledError, DevicesNotDeployedError, raise_for_devices
 from ..config import Settings
 from ..log_buffer import tail
 
@@ -38,6 +38,9 @@ class UiState:
         except DevicesDisabledError:
             self.error = DEVICES_DISABLED
             return []
+        except DevicesNotDeployedError:
+            self.error = DEVICES_NOT_DEPLOYED
+            return []
         except Exception:
             return []
 
@@ -51,8 +54,8 @@ class UiState:
                 from ..agent import Agent
                 auth.enrol(self.settings, Agent(self.settings).capabilities(), platform.platform())
                 permissions.check(prompt=True)  # first-run: triggers the macOS Screen Recording / Accessibility prompts
-            except DevicesDisabledError:
-                self.error = DEVICES_DISABLED
+            except (DevicesDisabledError, DevicesNotDeployedError) as e:
+                self.error = str(e)
             except Exception as e:
                 self.error = f"Sign-in failed: {e}"
             finally:

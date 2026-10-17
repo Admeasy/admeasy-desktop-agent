@@ -13,7 +13,13 @@ import threading
 import httpx
 
 from . import VERSION, auth, permissions, system_hooks
-from .api import DEVICES_DISABLED, DevicesDisabledError, check_devices_enabled
+from .api import (
+    DEVICES_DISABLED,
+    DEVICES_NOT_DEPLOYED,
+    DevicesDisabledError,
+    DevicesNotDeployedError,
+    devices_api_state,
+)
 from .config import LOG_DIR, Settings
 
 
@@ -77,8 +83,15 @@ def cmd_doctor() -> int:
     tok = auth.load_secret("access_token")
     if auth.refresh(s.backend):
         tok = auth.load_secret("access_token")
-    dev_on = check_devices_enabled(s.backend, tok) if st["signed_in"] else check_devices_enabled(s.backend)
-    line("devices API (DEVICES_ENABLED)", dev_on, DEVICES_DISABLED if not dev_on else "")
+    api_state = devices_api_state(s.backend, tok if st["signed_in"] else None)
+    api_detail = {
+        "ok": "routes live",
+        "auth_required": "routes live (sign in to list devices)",
+        "disabled": DEVICES_DISABLED,
+        "not_deployed": DEVICES_NOT_DEPLOYED,
+        "unreachable": "could not reach GET /devices",
+    }[api_state]
+    line("devices API", api_state in ("ok", "auth_required"), api_detail)
     perms = permissions.check()
     for k in ("screen", "accessibility"):
         line(f"permission: {k}", perms.get(k), "" if perms.get(k) else "System Settings > Privacy & Security")
@@ -113,8 +126,8 @@ def main() -> None:
             auth.save_secret(k, t[k])
         try:
             auth.enrol(s, _enrol_caps(Agent(s)), platform.platform())
-        except DevicesDisabledError:
-            print(DEVICES_DISABLED, file=sys.stderr)
+        except (DevicesDisabledError, DevicesNotDeployedError) as e:
+            print(str(e), file=sys.stderr)
             sys.exit(1)
         permissions.check(prompt=True)
         print("signed in as", t["email"])
