@@ -61,11 +61,27 @@ def cmd_run(background: bool) -> None:
         return
     try:
         import webview
+
         webview.create_window("Admeasy", url, width=460, height=720)
         webview.start()  # must own the main thread on macOS
-    except Exception:
+    except Exception as exc:
+        logging.getLogger("admeasy-desktop").warning("webview unavailable (%s), using browser", exc)
         import webbrowser
+
         webbrowser.open(url)
+        if sys.platform == "win32" and frozen():
+            try:
+                import ctypes
+
+                ctypes.windll.user32.MessageBoxW(
+                    0,
+                    "Admeasy opened in your browser. Install Microsoft Edge WebView2 from "
+                    "https://go.microsoft.com/fwlink/p/?LinkId=2124703 and reinstall for the desktop window.",
+                    "Admeasy",
+                    0x40,
+                )
+            except Exception:
+                pass
         threading.Event().wait()
 
 

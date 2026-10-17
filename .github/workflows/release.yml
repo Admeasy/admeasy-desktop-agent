@@ -11,12 +11,46 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - name: Build unsigned DMG
-        run: bash desktop/packaging/build_macos_unsigned.sh
+      - name: Detect macOS signing secrets
+        id: signmac
+        env:
+          CERT: ${{ secrets.MAC_CERT_P12 }}
+        run: |
+          if [ -n "$CERT" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else echo "enabled=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Import signing cert
+        if: steps.signmac.outputs.enabled == 'true'
+        env:
+          CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          echo "$CERT_P12" | base64 -d > cert.p12
+          security create-keychain -p ci build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security import cert.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+      - name: Configure notarytool
+        if: steps.signmac.outputs.enabled == 'true'
+        run: >
+          xcrun notarytool store-credentials admeasy-notary
+          --apple-id "${{ secrets.APPLE_ID }}"
+          --team-id "${{ secrets.APPLE_TEAM_ID }}"
+          --password "${{ secrets.APPLE_APP_PASSWORD }}"
+      - name: Build signed DMG
+        if: steps.signmac.outputs.enabled == 'true'
+        env:
+          SIGN_ID: ${{ secrets.MAC_SIGN_ID }}
+        run: bash desktop/packaging/build_macos_release.sh
+      - name: Build ad-hoc DMG (no signing secrets)
+        if: steps.signmac.outputs.enabled != 'true'
+        run: bash desktop/packaging/build_macos_release.sh
       - uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: desktop/packaging/Admeasy-*-macos-unsigned.dmg
+          path: |
+            desktop/packaging/Admeasy-*-macos.dmg
+            desktop/packaging/Admeasy-*-macos-unsigned.dmg
   windows:
     runs-on: windows-latest
     steps:
@@ -25,12 +59,32 @@ jobs:
         with: {python-version: "3.12"}
       - name: Install Inno Setup
         run: choco install innosetup -y
-      - name: Build unsigned installer
-        run: powershell -ExecutionPolicy Bypass -File desktop/packaging/build_windows_unsigned.ps1
+      - name: Detect Windows signing secrets
+        id: signwin
+        shell: bash
+        env:
+          PFX: ${{ secrets.WIN_SIGN_PFX }}
+        run: |
+          if [ -n "$PFX" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else echo "enabled=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Write signing PFX
+        if: steps.signwin.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          WIN_SIGN_PFX: ${{ secrets.WIN_SIGN_PFX }}
+          WIN_SIGN_PFX_PASSWORD: ${{ secrets.WIN_SIGN_PFX_PASSWORD }}
+        run: |
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\sign.pfx", [Convert]::FromBase64String($env:WIN_SIGN_PFX))
+          echo "SIGN_PFX=$env:RUNNER_TEMP\sign.pfx" >> $env:GITHUB_ENV
+          echo "SIGN_PFX_PASSWORD=$env:WIN_SIGN_PFX_PASSWORD" >> $env:GITHUB_ENV
+      - name: Build Windows installer
+        run: powershell -ExecutionPolicy Bypass -File desktop/packaging/build_windows_release.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: windows-exe
-          path: desktop/packaging/Admeasy-*-windows-unsigned.exe
+          path: |
+            desktop/packaging/Admeasy-*-windows.exe
+            desktop/packaging/Admeasy-*-windows-unsigned.exe
   publish:
     needs: [macos, windows]
     runs-on: ubuntu-latest

@@ -13,7 +13,7 @@ pip install -q 'pyobjc-framework-Quartz>=10' 'pyobjc-framework-ApplicationServic
 export ADMEASY_RELEASE_VERSION="$VER"
 python -m PyInstaller admeasy.spec --noconfirm --distpath dist --workpath build
 APP=dist/Admeasy.app
-codesign --force --deep -s - "$APP" || true
+codesign --force --options runtime --entitlements entitlements.plist --sign - "$APP" || true
 rm -rf dmg_staging
 mkdir -p dmg_staging
 cp -R "$APP" dmg_staging/
