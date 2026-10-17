@@ -26,7 +26,7 @@ async def _desktop_shot(settle: float = 2.5) -> dict:
 
 async def run(p: dict) -> dict:
     op = p.get("op") or "open"
-    use_web = bool(p.get("fallback_web")) or Settings.load().browser_automation == "playwright_profile"
+    use_web = bool(p.get("fallback_web"))
 
     if op == "open_desktop" or (not use_web and op in ("open", "status", "read", "navigate")):
         opened = launch("WhatsApp")

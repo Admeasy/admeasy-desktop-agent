@@ -96,15 +96,27 @@ def _copy_extension_tree() -> Path:
 
 
 def _install_host_launcher() -> Path:
+    from .runtime import app_executable, frozen
+
     HOST_INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+    exe = app_executable()
+    if frozen():
+        if sys.platform == "win32":
+            cmd = HOST_INSTALL_DIR / "admeasy_host.cmd"
+            cmd.write_text(f'@echo off\r\n"{exe}" bridge-host\r\n')
+            return cmd
+        sh = HOST_INSTALL_DIR / "run_host.sh"
+        sh.write_text(f'#!/usr/bin/env bash\nexec "{exe}" bridge-host\n')
+        sh.chmod(0o755)
+        return sh
     host_py = HOST_INSTALL_DIR / "admeasy_host.py"
     shutil.copy2(host_source_script(), host_py)
     if sys.platform == "win32":
         cmd = HOST_INSTALL_DIR / "admeasy_host.cmd"
-        cmd.write_text(f'@echo off\r\npy -3 "{host_py}"\r\n')
+        cmd.write_text(f'@echo off\r\n"{exe}" bridge-host\r\n')
         return cmd
     sh = HOST_INSTALL_DIR / "run_host.sh"
-    sh.write_text(f'#!/usr/bin/env bash\nexec python3 "{host_py}"\n')
+    sh.write_text(f'#!/usr/bin/env bash\nexec "{exe}" bridge-host\n')
     sh.chmod(0o755)
     return sh
 

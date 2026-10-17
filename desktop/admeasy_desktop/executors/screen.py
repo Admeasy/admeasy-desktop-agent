@@ -133,32 +133,30 @@ def act(action: dict, scaler: Scaler | None = None) -> None:
         from .. import som as som_mod
 
         eid = int(action.get("element_id") or action.get("mark") or 0)
-        el = som_mod.LAST_ELEMENTS.get(eid) or {}
-        if sys.platform == "darwin" and el.get("name"):
+        center = som_mod.center_for_mark(eid)
+        if center:
+            _show(center[0], center[1], flash=True)
+        if sys.platform == "darwin" and (som_mod.LAST_ELEMENTS.get(eid) or {}).get("name"):
             import subprocess
 
             if t == "ax_type":
                 paste_text(str(action.get("text") or ""))
+            elif center:
+                subprocess.run(
+                    [
+                        "osascript",
+                        "-e",
+                        f'tell application "System Events" to click at {{{center[0]}, {center[1]}}}',
+                    ],
+                    check=False,
+                    timeout=5,
+                )
+        elif center:
+            pg.moveTo(center[0], center[1], duration=0.15)
+            if t == "ax_type":
+                paste_text(str(action.get("text") or ""))
             else:
-                center = som_mod.center_for_mark(eid)
-                if center:
-                    subprocess.run(
-                        [
-                            "osascript",
-                            "-e",
-                            f'tell application "System Events" to click at {{{center[0]}, {center[1]}}}',
-                        ],
-                        check=False,
-                        timeout=5,
-                    )
-        else:
-            center = som_mod.center_for_mark(eid)
-            if center:
-                pg.moveTo(center[0], center[1], duration=0)
-                if t == "ax_type":
-                    paste_text(str(action.get("text") or ""))
-                else:
-                    pg.click()
+                pg.click()
     elif t == "wait":
         time.sleep(min(float(action.get("seconds") or 1), 10))
 

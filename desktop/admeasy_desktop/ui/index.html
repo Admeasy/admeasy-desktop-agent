@@ -42,6 +42,7 @@ async function draw(){
    <div class="card"><b>Permissions</b>${perms}</div>
    <div class="card"><div class="row"><span>Ask me before risky actions</span><select id="mode">
      ${[['ask_risky','Risky only'],['ask_always','Every action'],['trusted','Never (trusted)']].map(([v,t])=>`<option value="${v}" ${s.settings.approval_mode===v?'selected':''}>${t}</option>`).join('')}</select></div>
+   <div class="row"><span>Show pink agent cursor on screen</span><input type="checkbox" id="cursor" ${s.settings.show_agent_cursor?'checked':''}></div>
    <div class="row"><span>Keep this computer awake</span><input type="checkbox" id="awake" ${s.settings.keep_awake?'checked':''}></div>
    <div class="row"><span>Start at login</span><input type="checkbox" id="login_start" ${s.settings.start_at_login?'checked':''}></div>
    <div class="row"><span>Pause Admeasy on this computer</span><input type="checkbox" id="paused" ${s.settings.paused?'checked':''}></div></div>
@@ -49,6 +50,7 @@ async function draw(){
    <button class="ghost" id="out">Sign out and remove this computer</button>`;
   $('#log').textContent=logs||'(no log lines yet)';
   $('#mode').onchange=e=>api('settings',{approval_mode:e.target.value});
+  $('#cursor').onchange=e=>api('settings',{show_agent_cursor:e.target.checked});
   $('#awake').onchange=e=>api('settings',{keep_awake:e.target.checked});
   $('#login_start').onchange=e=>api('settings',{start_at_login:e.target.checked});
   $('#paused').onchange=e=>api('settings',{paused:e.target.checked});

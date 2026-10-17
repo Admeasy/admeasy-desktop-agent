@@ -130,6 +130,11 @@ def cmd_doctor() -> int:
 
 
 def main() -> None:
+    if len(sys.argv) >= 2 and sys.argv[1] == "bridge-host":
+        from .bridge_host_runner import main as bridge_main
+
+        bridge_main()
+        return
     ap = argparse.ArgumentParser(prog="admeasy-desktop")
     sub = ap.add_subparsers(dest="cmd")
     r = sub.add_parser("run")

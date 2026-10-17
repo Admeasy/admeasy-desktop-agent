@@ -47,6 +47,8 @@ class Settings:
     def load(cls) -> "Settings":
         try:
             raw = json.loads(CONFIG_PATH.read_text())
+            if raw.get("browser_automation") == "playwright_profile" and not os.environ.get("ADMEASY_PLAYWRIGHT"):
+                raw["browser_automation"] = "default_first"
             return cls(**{k: v for k, v in raw.items() if k in cls.__dataclass_fields__})
         except Exception:
             return cls()

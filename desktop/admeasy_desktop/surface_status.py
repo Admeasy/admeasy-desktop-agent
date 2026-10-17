@@ -11,6 +11,7 @@ from . import permissions
 from .default_browser import default_browser
 from .session_probe import probe_domain
 from .browser_bridge import extension_status
+from .session_registry import snapshot as sessions_snapshot
 
 
 def _active_app() -> str | None:
@@ -71,4 +72,6 @@ def collect(params: dict) -> dict[str, Any]:
         "extension_bridge": ext,
         "speed_tier": "medium",
         "timestamp": int(time.time()),
+        "browser_automation_enforced": "default_first",
+        "execution_sessions": sessions_snapshot(),
     }

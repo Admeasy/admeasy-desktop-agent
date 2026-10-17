@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import os
 
 from ..config import PROFILE_DIR, Settings
 from ..failure_detect import analyze as detect_failure
@@ -29,9 +30,12 @@ STRUCTURED_OPS = frozenset(
 
 
 def _automation_mode(p: dict) -> str:
-    if p.get("force_playwright") or p.get("automation") == "playwright_profile":
+    """Isolated Playwright only when the task explicitly requests it (or ADMEASY_PLAYWRIGHT=1)."""
+    if p.get("force_playwright"):
         return "playwright_profile"
-    return Settings.load().browser_automation or "default_first"
+    if p.get("automation") == "playwright_profile" and os.environ.get("ADMEASY_PLAYWRIGHT"):
+        return "playwright_profile"
+    return "default_first"
 
 
 async def _screen_snapshot(chars: int = 4000, skill_hints: list | None = None) -> dict:

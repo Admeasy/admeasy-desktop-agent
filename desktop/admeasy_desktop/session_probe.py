@@ -64,7 +64,6 @@ def probe_domain(domain: str) -> dict[str, Any]:
             row = cur.fetchone()
             conn.close()
             if row and row[0]:
-                # last_access_utc is microseconds since 1601 on Chrome — convert roughly to unix
                 ts = int(row[0] / 1_000_000 - 11644473600) if row[0] > 10_000_000_000 else int(time.time())
                 return {"session_present": True, "browser": browser, "last_seen_at": ts}
         except Exception:

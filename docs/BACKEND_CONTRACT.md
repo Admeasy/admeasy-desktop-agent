@@ -8,6 +8,8 @@ The LLM picks `device_*` tools (no intent routing). See [COMPUTER_USE.md](COMPUT
 
 **v0.4 highlights:** typed result `status`, `status`/`signin` job kinds, SOM + AX (macOS + Windows UIA), Chromium extension bridge, session probe (boolean only), idempotency + reconnect buffer, artifact append/upload, `skill_hints` on jobs for failure detection (no hardcoded site lists in desktop code).
 
+**Browser policy (v0.4.0-beta.3+):** Desktop enforces **`default_first`** unless `task.params.force_playwright=true` or env `ADMEASY_PLAYWRIGHT=1`. Backend must not rely on isolated `~/.admeasy/chrome-profile` for user sessions. `hello.capabilities.playwright_requires` documents this.
+
 ## Enablement
 
 - `DEVICES_ENABLED=true` on the backend (Postgres + migration `user_devices` / `device_jobs`).

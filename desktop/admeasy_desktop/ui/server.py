@@ -137,7 +137,9 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
                 permissions.open_settings(body.get("which", ""))
             elif name == "settings":
                 for k, v in body.items():
-                    if k in ("approval_mode", "keep_awake", "start_at_login", "paused") and hasattr(state.settings, k):
+                    if k in ("approval_mode", "keep_awake", "start_at_login", "paused", "show_agent_cursor") and hasattr(
+                        state.settings, k
+                    ):
                         setattr(state.settings, k, v)
                 state.settings.save()
                 system_hooks.keep_awake(state.settings.keep_awake and not state.settings.paused)

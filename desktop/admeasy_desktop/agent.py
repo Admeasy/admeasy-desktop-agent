@@ -26,6 +26,7 @@ from .results import normalize as normalize_result
 from .signin_handoff import run as signin_run
 from .surface_status import collect as surface_collect
 from .system_hooks import keep_awake
+from . import cursor_overlay
 from .bridge_server import start as start_bridge_server
 from .browser_bridge import extension_status
 
@@ -66,6 +67,7 @@ class Agent:
             "mouse_keyboard": True,
             "browser": self.s.browser_automation,
             "browser_modes": ["default_first", "playwright_profile", "extension_bridge"],
+            "playwright_requires": "params.force_playwright or ADMEASY_PLAYWRIGHT=1",
             "native_apps": True,
             "agent_cursor_overlay": self.s.show_agent_cursor,
             "objectives": {"echo_objective_id": True},
@@ -229,6 +231,8 @@ class Agent:
         if kind == "screenshot":
             return {"status": "ok", "result": await loop.run_in_executor(None, screen.screenshot)}
         if kind == "cua":
+            if self.s.show_agent_cursor:
+                cursor_overlay.ensure_started()
             a = p.get("action") or {}
             t = a.get("type")
             if t == "done":
@@ -322,6 +326,9 @@ class Agent:
     async def tunnel(self) -> None:
         self._loop = asyncio.get_running_loop()
         start_bridge_server()
+        if self.s.show_agent_cursor:
+            cursor_overlay.set_enabled(True)
+            cursor_overlay.ensure_started()
         asyncio.create_task(self.worker())
         backoff = 1
         while True:

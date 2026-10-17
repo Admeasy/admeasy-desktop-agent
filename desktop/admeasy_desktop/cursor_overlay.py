@@ -82,13 +82,25 @@ def ensure_started() -> None:
 
 
 def move_to(x: int, y: int) -> None:
-    if not _enabled or _cmds is None:
+    if not _enabled:
         return
     ensure_started()
+    if _cmds is None:
+        return
     _cmds.put(("move", int(x), int(y)))
 
 
 def click_flash() -> None:
-    if not _enabled or _cmds is None:
+    if not _enabled:
+        return
+    ensure_started()
+    if _cmds is None:
         return
     _cmds.put(("flash",))
+
+
+def pointer_at(x: int, y: int, flash: bool = False) -> None:
+    """Show agent cursor without moving the OS pointer (preview / AX paths)."""
+    move_to(x, y)
+    if flash:
+        click_flash()
