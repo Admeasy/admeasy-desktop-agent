@@ -1,6 +1,7 @@
 desktop/.venv/
-desktop/**/__pycache__/
-desktop/**/*.egg-info/
+**/__pycache__/
+**/*.egg-info/
+**/*.pyc
 desktop/build/
 desktop/dist/
 *.pyc

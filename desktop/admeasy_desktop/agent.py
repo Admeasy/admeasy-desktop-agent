@@ -53,7 +53,7 @@ class Agent:
 
     async def hello(self) -> None:
         await self.send({"type": "hello", "version": VERSION, "os_version": platform.platform(),
-                         "capabilities": self.capabilities(), "permissions": permissions.check()})
+                         "capabilities": self.capabilities(), "permissions": permissions.wire_snapshot()})
 
     # ---------- jobs ----------
     async def step(self, jid: str, text: str) -> None:
@@ -63,8 +63,9 @@ class Agent:
         aid = str(uuid.uuid4())
         fut = asyncio.get_running_loop().create_future()
         self.approvals[aid] = fut
-        await self.send({"type": "approval_request", "approval_id": aid, "job_id": jid, "action": kind,
-                         "summary": verdict.reason, "risk": verdict.risk})
+        await self.send({"type": "approval_request", "approval_id": aid, "job_id": jid,
+                         "action": str(kind)[:80], "summary": str(verdict.reason)[:400],
+                         "risk": str(verdict.risk)[:20]})
         try:
             return bool(await asyncio.wait_for(fut, APPROVAL_WAIT_S + 5))
         except asyncio.TimeoutError:
@@ -84,7 +85,7 @@ class Agent:
                 elif v.ask and not await self.ask_user(jid, kind, v):
                     res = {"status": "denied", "error": "the user did not approve this action"}
                 else:
-                    miss = permissions.missing(permissions.check()) if kind in ("cua", "screenshot") else []
+                    miss = permissions.missing(permissions.wire_snapshot()) if kind in ("cua", "screenshot") else []
                     res = ({"status": "needs_permission", "error": "grant in System Settings: " + ", ".join(miss)}
                            if miss else await asyncio.wait_for(self.dispatch(jid, kind, p), job.get("timeout_s", 300)))
         except asyncio.CancelledError:
@@ -102,12 +103,17 @@ class Agent:
             return {"status": "done", "result": await loop.run_in_executor(None, screen.screenshot)}
         if kind == "cua":
             a = p.get("action") or {}
-            if a.get("type") not in (None, "screenshot", "done"):
-                await self.step(jid, f"{a.get('type')} {a.get('text', '')[:40]}")
+            t = a.get("type")
+            if t == "done":
+                return {"status": "done", "result": {"answer": str(a.get("answer") or "")}}
+            if t == "needs_login":
+                return {"status": "needs_login", "error": "sign-in or captcha required on screen"}
+            if t not in (None, "screenshot"):
+                await self.step(jid, f"{t} {a.get('text', '')[:40]}")
                 await loop.run_in_executor(None, screen.act, a, self.scaler)
                 await asyncio.sleep(0.8)
             shot = await loop.run_in_executor(None, screen.screenshot)
-            self.scaler = screen.Scaler(tuple(screen._pg().size()), tuple(shot["size"]))  # same ratio as sent
+            self.scaler = screen.Scaler(tuple(screen._pg().size()), tuple(shot["size"]))
             return {"status": "done", "result": shot}
         if kind == "browser":
             await self.step(jid, f"browser {p.get('op')} {p.get('url', '')[:80]}")
@@ -176,7 +182,10 @@ class Agent:
                         watcher.cancel()
             except websockets.exceptions.InvalidStatus as e:
                 code = getattr(getattr(e, "response", None), "status_code", 0)
-                if code in (401, 403):
+                if code == 503:
+                    self._notify(False, "devices disabled on backend (DEVICES_ENABLED)")
+                    await asyncio.sleep(60)
+                elif code in (401, 403):
                     from .auth import clear_device_secrets
                     clear_device_secrets()
                     self._notify(False, "sign in again (device token invalid or revoked)")
@@ -193,7 +202,7 @@ class Agent:
     async def _watch_permissions(self) -> None:
         last = None
         while True:
-            cur = permissions.check()
+            cur = permissions.wire_snapshot()
             if cur != last:
                 await self.send({"type": "permissions", "permissions": cur})
                 last = cur

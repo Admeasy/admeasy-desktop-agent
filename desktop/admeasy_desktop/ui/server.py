@@ -10,6 +10,7 @@ from pathlib import Path
 import httpx
 
 from .. import auth, permissions, system_hooks
+from ..api import DEVICES_DISABLED, DevicesDisabledError, raise_for_devices
 from ..config import Settings
 from ..log_buffer import tail
 
@@ -32,7 +33,11 @@ class UiState:
             r = httpx.get(f"{self.settings.backend.rstrip('/')}/devices", headers={"Authorization": f"Bearer {tok}"}, timeout=8)
             if r.status_code == 401 and auth.refresh(self.settings.backend):
                 return self.devices()
+            raise_for_devices(r)
             return r.json().get("devices", []) if r.status_code == 200 else []
+        except DevicesDisabledError:
+            self.error = DEVICES_DISABLED
+            return []
         except Exception:
             return []
 
@@ -46,6 +51,8 @@ class UiState:
                 from ..agent import Agent
                 auth.enrol(self.settings, Agent(self.settings).capabilities(), platform.platform())
                 permissions.check(prompt=True)  # first-run: triggers the macOS Screen Recording / Accessibility prompts
+            except DevicesDisabledError:
+                self.error = DEVICES_DISABLED
             except Exception as e:
                 self.error = f"Sign-in failed: {e}"
             finally:

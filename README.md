@@ -19,7 +19,7 @@ Point at the Lightsail backend (default in code) or override:
 export ADMEASY_BACKEND=https://admeasy-backend.6h5y8j39qxdcg.ap-south-1.cs.amazonlightsail.com
 ```
 
-The backend must have `DEVICES_ENABLED=true` and the device routes merged from `docs/backend-changes.diff` (applied in the main `admeasy-ai-assistant` repo).
+The backend must have `DEVICES_ENABLED=true` and device routes from [admeasy-ai-assistant PR #42](https://github.com/Admeasy/admeasy-ai-assistant/pull/42) (see `docs/BACKEND_CONTRACT.md` and `docs/backend-changes.diff`).
 
 ## Repository layout
 

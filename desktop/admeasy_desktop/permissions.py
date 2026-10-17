@@ -46,3 +46,9 @@ def open_settings(which: str) -> None:
 
 def missing(perms: dict) -> list[str]:
     return [k for k in ("screen", "accessibility") if perms.get(k) is False]
+
+
+def wire_snapshot() -> dict:
+    """Permission fields sent on hello / permissions (screen + accessibility only)."""
+    p = check()
+    return {"screen": bool(p.get("screen")), "accessibility": bool(p.get("accessibility"))}

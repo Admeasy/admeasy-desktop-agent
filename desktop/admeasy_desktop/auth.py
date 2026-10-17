@@ -21,6 +21,7 @@ import webbrowser
 import httpx
 
 from . import VERSION
+from .api import DevicesDisabledError, raise_for_devices
 from .config import HOME, Settings, platform_name
 
 SERVICE = "ai.admeasy.desktop"
@@ -94,14 +95,23 @@ def clear_secrets() -> None:
 
 
 def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    """Loopback port in 1024–65535 (backend ignores desktop_port outside this range)."""
+    for _ in range(40):
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        if 1024 <= port <= 65535:
+            return port
+    raise RuntimeError("could not bind a loopback port in 1024–65535")
+
+
+def _sign_in_nonce() -> str:
+    return secrets.token_urlsafe(32)[:64]
 
 
 def login_via_browser(backend: str, timeout_s: int = 300, open_browser=webbrowser.open) -> dict:
     """Blocks until the browser hands the tokens back. Returns {access_token, refresh_token, email}."""
-    port, nonce = _free_port(), secrets.token_urlsafe(24)
+    port, nonce = _free_port(), _sign_in_nonce()
     got: dict = {}
     done = threading.Event()
 
@@ -164,6 +174,7 @@ def enrol(settings: Settings, capabilities: dict, os_version: str) -> dict:
             tok = refresh(settings.backend)
             if tok:
                 continue
+        raise_for_devices(r)
         r.raise_for_status()
         j = r.json()
         save_secret("device_id", j["device_id"])

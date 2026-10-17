@@ -13,6 +13,7 @@ import threading
 import httpx
 
 from . import VERSION, auth, permissions, system_hooks
+from .api import DEVICES_DISABLED, DevicesDisabledError, check_devices_enabled
 from .config import LOG_DIR, Settings
 
 
@@ -71,8 +72,13 @@ def cmd_doctor() -> int:
     except Exception as e:
         line("backend reachable", False, f"{s.backend}: {e}")
     st = auth.state()
-    line("signed in", st["signed_in"], st.get("email") or "run: admeasy-desktop login")
+    line("signed in", st["signed_in"], st.get("email") or "run: python -m admeasy_desktop login")
     line("computer enrolled", bool(st["device_id"]))
+    tok = auth.load_secret("access_token")
+    if auth.refresh(s.backend):
+        tok = auth.load_secret("access_token")
+    dev_on = check_devices_enabled(s.backend, tok) if st["signed_in"] else check_devices_enabled(s.backend)
+    line("devices API (DEVICES_ENABLED)", dev_on, DEVICES_DISABLED if not dev_on else "")
     perms = permissions.check()
     for k in ("screen", "accessibility"):
         line(f"permission: {k}", perms.get(k), "" if perms.get(k) else "System Settings > Privacy & Security")
@@ -105,7 +111,11 @@ def main() -> None:
         t = auth.login_via_browser(s.backend)
         for k in ("access_token", "refresh_token", "email"):
             auth.save_secret(k, t[k])
-        auth.enrol(s, _enrol_caps(Agent(s)), platform.platform())
+        try:
+            auth.enrol(s, _enrol_caps(Agent(s)), platform.platform())
+        except DevicesDisabledError:
+            print(DEVICES_DISABLED, file=sys.stderr)
+            sys.exit(1)
         permissions.check(prompt=True)
         print("signed in as", t["email"])
     elif a.cmd == "devices":
