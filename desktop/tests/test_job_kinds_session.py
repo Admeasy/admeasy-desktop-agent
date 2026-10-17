@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from typing import Any
 
 import pytest
@@ -55,6 +56,20 @@ def _task(jid: str, kind: str, params: dict) -> dict:
 class _FakePg:
     def size(self):
         return (1920, 1080)
+
+
+def _on_ci() -> bool:
+    return os.environ.get("CI", "").lower() in ("1", "true", "yes")
+
+
+@pytest.fixture(autouse=True)
+def _ci_grant_screen_permissions(monkeypatch):
+    """GitHub macOS runners lack Screen Recording / Accessibility; keep production checks unchanged."""
+    if not _on_ci():
+        return
+    granted = {"screen": True, "accessibility": True}
+    monkeypatch.setattr(agent_mod.permissions, "wire_snapshot", lambda: dict(granted))
+    monkeypatch.setattr(agent_mod.permissions, "missing", lambda snap: [])
 
 
 @pytest.fixture(autouse=True)
