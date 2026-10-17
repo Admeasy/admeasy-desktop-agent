@@ -1,0 +1,8 @@
+desktop/.venv/
+**/__pycache__/
+**/*.egg-info/
+**/*.pyc
+desktop/build/
+desktop/dist/
+*.pyc
+.DS_Store

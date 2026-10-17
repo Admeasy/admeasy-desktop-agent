@@ -1,0 +1,102 @@
+"""Playwright on the user's REAL Chrome, with a dedicated persistent Admeasy profile (~/.admeasy/chrome-profile).
+
+Why a dedicated profile: since Chrome 136, remote debugging is ignored on the default profile directory, so Playwright
+cannot attach to the everyday profile. Instead the user signs in to their sites once in this window (on their own machine,
+own IP, own device fingerprint) and the sessions stay on disk. That fixes the cloud-VM problem of sessions that are
+missing or flagged. For the everyday Chrome window use pixel control (executors/screen.py)."""
+from __future__ import annotations
+
+import base64
+
+from ..config import PROFILE_DIR
+
+CAPTCHA = ["iframe[src*='challenges.cloudflare.com']", "iframe[src*='recaptcha']", "iframe[src*='hcaptcha']",
+           "text=Verify you are human", "#challenge-form"]
+LOGIN_URL_PARTS = ("/login", "/signin", "/sign-in", "accounts.google.com", "/oauth")
+
+
+class Browser:
+    def __init__(self):
+        self.pw = None
+        self.ctx = None
+
+    async def start(self):
+        if self.ctx:
+            return
+        from playwright.async_api import async_playwright
+        PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+        self.pw = await async_playwright().start()
+        try:
+            self.ctx = await self.pw.chromium.launch_persistent_context(
+                str(PROFILE_DIR), channel="chrome", headless=False, no_viewport=True,
+                args=["--no-first-run", "--hide-crash-restore-bubble"], ignore_default_args=["--enable-automation"])
+        except Exception:  # Chrome not installed: fall back to Playwright's Chromium (run `playwright install chromium`)
+            self.ctx = await self.pw.chromium.launch_persistent_context(
+                str(PROFILE_DIR), headless=False, no_viewport=True, args=["--no-first-run"])
+        self.ctx.on("close", lambda *_: setattr(self, "ctx", None))
+
+    async def page(self):
+        await self.start()
+        pages = [p for p in self.ctx.pages if not p.is_closed()]
+        return pages[0] if pages else await self.ctx.new_page()
+
+    async def snapshot(self, page, chars=4000):
+        shot = await page.screenshot(type="jpeg", quality=55)
+        txt = await page.evaluate("() => document.body ? document.body.innerText : ''")
+        return {"url": page.url, "title": await page.title(), "text": (txt or "")[:chars],
+                "screenshot_b64": base64.b64encode(shot).decode()}
+
+    async def status(self, page) -> str:
+        for sel in CAPTCHA:
+            try:
+                if await page.locator(sel).first.is_visible(timeout=300):
+                    return "needs_human"
+            except Exception:
+                pass
+        if any(k in (page.url or "") for k in LOGIN_URL_PARTS):
+            return "needs_login"
+        try:
+            if await page.locator("input[type='password']").first.is_visible(timeout=250):
+                return "needs_login"
+        except Exception:
+            pass
+        return "done"
+
+    async def run(self, p: dict) -> dict:
+        page = await self.page()
+        op = p.get("op") or "read"
+        if op in ("open", "navigate") and p.get("url"):
+            await page.goto(p["url"], wait_until="domcontentloaded", timeout=45000)
+        elif op == "navigate" and p.get("direction") == "back":
+            await page.go_back(wait_until="domcontentloaded", timeout=15000)
+        elif op == "navigate" and p.get("direction") == "forward":
+            await page.go_forward(wait_until="domcontentloaded", timeout=15000)
+        elif op == "click":
+            if p.get("selector"):
+                await page.locator(p["selector"]).first.click(timeout=8000)
+            elif p.get("text"):
+                await page.get_by_text(p["text"], exact=False).first.click(timeout=8000)
+            else:
+                await page.mouse.click(float(p["x"]), float(p["y"]))
+        elif op == "type":
+            if p.get("selector"):
+                await page.locator(p["selector"]).first.click(timeout=8000)
+            await page.keyboard.insert_text(str(p.get("text") or ""))
+        elif op == "press":
+            await page.keyboard.press(str(p.get("key") or "Enter"))
+        elif op == "scroll":
+            await page.mouse.wheel(0, float(p.get("dy") or 600))
+        elif op == "search":
+            q = str(p.get("query") or "")
+            try:
+                await page.get_by_text(q, exact=False).first.scroll_into_view_if_needed(timeout=3000)
+            except Exception:
+                pass
+        await page.wait_for_timeout(400)
+        return {"status": await self.status(page), "result": await self.snapshot(page, 8000 if op == "read" else 4000)}
+
+    async def close(self):
+        if self.ctx:
+            await self.ctx.close()
+        if self.pw:
+            await self.pw.stop()

@@ -1,0 +1,20 @@
+# core (all platforms) — pinned ranges; see pyproject.toml for canonical deps
+websockets>=13,<16
+httpx>=0.27,<1
+playwright>=1.47,<2        # drives real Chrome (channel="chrome"); no bundled browser download needed
+mss>=9.0,<10               # fast multi-monitor screenshots
+pyautogui>=0.9.54,<1       # mouse + keyboard (macOS/Windows/Linux)
+pillow>=10.0,<12           # resize/encode screenshots
+pyperclip>=1.9,<2          # clipboard (also used to type non-ASCII text reliably)
+keyring>=25,<26            # macOS Keychain / Windows Credential Locker for tokens
+pywebview>=5.0,<6          # the plain login + devices window
+pystray>=0.19,<1           # menu-bar / tray icon (pause, quit), optional at runtime
+psutil>=5.9,<8
+# macOS only (permission checks: Screen Recording, Accessibility)
+pyobjc-framework-Quartz>=10; sys_platform == "darwin"
+pyobjc-framework-ApplicationServices>=10; sys_platform == "darwin"
+# build
+pyinstaller>=6.6
+# tests
+pytest>=8
+pytest-asyncio>=0.24
