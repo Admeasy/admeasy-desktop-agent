@@ -143,13 +143,9 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
                 system_hooks.keep_awake(state.settings.keep_awake and not state.settings.paused)
                 system_hooks.set_autostart(state.settings.start_at_login)
             elif name == "install_extension":
-                from pathlib import Path
+                from ..browser_bridge import full_extension_setup
 
-                from ..browser_bridge import install_native_host
-
-                host = Path(__file__).resolve().parents[2] / "native_host" / "admeasy_host.py"
-                browsers = install_native_host(host)
-                return self._json({"ok": True, "browsers": browsers})
+                return self._json({"ok": True, **full_extension_setup()})
             return self._json({"ok": True})
 
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)

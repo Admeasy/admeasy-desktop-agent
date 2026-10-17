@@ -171,6 +171,8 @@ Desktop capabilities include `objectives.echo_objective_id: true`.
 
 Extension ops: `list_tabs`, `open_tab`, `navigate`, `read_page`, `extract` (`schema`), `query_elements`, `click_element`, `type_element`, `scroll`, `wait_for`, `screenshot_tab`, `close_tab` (background tabs when possible).
 
+**Extension identity (production):** fixed manifest `key` → extension id `apkfeonhbjpaplapnadecelcljpknplc`. Native host `allowed_origins` = `chrome-extension://apkfeonhbjpaplapnadecelcljpknplc/`. Install: desktop copies unpacked extension to `~/.admeasy/extension`, registers host, opens `chrome://extensions` (Load unpacked). Duplex path: agent socket `~/.admeasy/bridge/agent_addr.json` ↔ native host ↔ `chrome.runtime.connectNative`.
+
 `default_first`: `read`/`open`/`navigate` open the **default browser** and return screen capture + SOM. DOM ops without extension return `needs_human` + `interaction` hint.
 
 | op | params |

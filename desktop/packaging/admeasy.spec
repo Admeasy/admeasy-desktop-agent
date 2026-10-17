@@ -21,12 +21,22 @@ hidden = collect_submodules("admeasy_desktop") + [
     "pyautogui",
     "pyperclip",
 ]
+if sys.platform == "win32":
+    hidden += collect_submodules("uiautomation") + ["uiautomation", "comtypes", "comtypes.client", "comtypes.gen"]
+
+bridge = os.path.join(root, "browser_extension")
+native = os.path.join(root, "native_host")
+datas = [(os.path.join(root, "admeasy_desktop", "ui", "index.html"), os.path.join("admeasy_desktop", "ui"))]
+if os.path.isdir(bridge):
+    datas.append((bridge, "browser_extension"))
+if os.path.isdir(native):
+    datas.append((native, "native_host"))
 
 a = Analysis(
     [os.path.join(root, "admeasy_desktop", "__main__.py")],
     pathex=[root],
     hiddenimports=hidden,
-    datas=[(os.path.join(root, "admeasy_desktop", "ui", "index.html"), os.path.join("admeasy_desktop", "ui"))],
+    datas=datas,
 )
 pyz = PYZ(a.pure)
 exe = EXE(

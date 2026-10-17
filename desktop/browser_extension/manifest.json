@@ -3,6 +3,7 @@
   "name": "Admeasy Browser Bridge",
   "version": "0.4.0",
   "description": "Structured DOM access for Admeasy desktop agent (user profile).",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzkcndIAKUjUhr3pST+H6l007k/Mn7YWm2Sxz09NJqp8oBnwu5y9an1LEq/EAaygHxWwhG+MNuBgbSt2UyG+lqC+zt+KAAhkQnPV479KlalH2cWHX3EnB901r70hZAyq+w0PuCt3AM/vKgxIPZOWTTx26g4Hc9hv0HXL/KWki4umut0GkbbxltR6sG01RgRkk+17ryhjyoTtPMsCfz0aJh3g8q4x5Muz6Xa6fhVgj35v3V9TDlVqHJZR7B+pHWlpt331lyhjjsyB6BdKO+BFg7SPrZnhuq0pstD04fZQvsPoJZf6Wfb2S2HdqQXqyTvVCN6S+zLBlidm/yJAtwmAGaQIDAQAB",
   "permissions": ["tabs", "scripting", "nativeMessaging", "activeTab"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },
