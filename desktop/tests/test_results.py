@@ -1,9 +1,9 @@
 from admeasy_desktop.results import normalize
 
 
-def test_shell_nonzero_exit_is_failed():
-    out = normalize("shell", {"status": "done", "result": {"exit_code": 1, "output": "err"}})
-    assert out["status"] == "failed"
+def test_shell_nonzero_exit_is_error():
+    out = normalize("shell", {"status": "ok", "result": {"exit_code": 1, "output": "err"}})
+    assert out["status"] == "error"
     assert "code 1" in out["error"]
 
 
@@ -14,5 +14,5 @@ def test_needs_login_carries_error():
 
 
 def test_open_failure():
-    out = normalize("open", {"status": "done", "error": "could not open"})
-    assert out["status"] == "failed"
+    out = normalize("open", {"status": "ok", "error": "could not open"})
+    assert out["status"] == "error"
