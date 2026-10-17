@@ -2,7 +2,11 @@
 
 Desktop companion for [Admeasy](https://github.com/Admeasy/admeasy-ai-assistant): your phone (the command centre) drives actions on **your own** Mac or Windows PC through the same FastAPI backend, Supabase project, and Google account as the mobile app.
 
-## Quick start
+## Beta installers (no terminal)
+
+Download **v0.2.0-beta** from [GitHub Releases](https://github.com/Admeasy/admeasy-desktop-agent/releases) (unsigned macOS `.dmg` and Windows `.exe`). Install steps: [`docs/INSTALL_BETA.md`](docs/INSTALL_BETA.md).
+
+## Quick start (developers)
 
 ```bash
 cd desktop

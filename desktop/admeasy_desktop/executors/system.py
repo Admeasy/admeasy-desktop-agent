@@ -97,7 +97,10 @@ def files(p: dict, roots) -> dict:
 
 def clipboard(p: dict) -> dict:
     import pyperclip
-    if p.get("op") == "set":
+    op = p.get("op") or "get"
+    if op == "set":
         pyperclip.copy(str(p.get("text") or ""))
         return {"status": "done", "result": {"set": True}}
-    return {"status": "done", "result": {"text": pyperclip.paste()[:8000]}}
+    if op == "get":
+        return {"status": "done", "result": {"text": pyperclip.paste()[:8000]}}
+    return {"status": "failed", "error": f"unknown clipboard op {op}"}

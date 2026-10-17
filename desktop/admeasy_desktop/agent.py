@@ -26,6 +26,8 @@ from .results import normalize as normalize_result
 
 log = logging.getLogger("admeasy-desktop")
 APPROVAL_WAIT_S = 120
+# Job kinds the backend may send on /devices/tunnel (see admeasy-ai-assistant app/devices/tools.py).
+JOB_KINDS = frozenset({"screenshot", "open", "browser", "shell", "files", "clipboard", "cua"})
 
 
 class Agent:
@@ -103,6 +105,8 @@ class Agent:
         await self.send({"type": "result", "job_id": jid, **res})
 
     async def dispatch(self, jid: str, kind: str, p: dict) -> dict:
+        if kind not in JOB_KINDS:
+            return {"status": "failed", "error": f"unknown kind {kind}"}
         loop = asyncio.get_running_loop()
         if kind == "screenshot":
             return {"status": "done", "result": await loop.run_in_executor(None, screen.screenshot)}
@@ -133,7 +137,7 @@ class Agent:
             return await loop.run_in_executor(None, system.files, p, self.s.shared_folders)
         if kind == "clipboard":
             return await loop.run_in_executor(None, system.clipboard, p)
-        return {"status": "failed", "error": f"unknown kind {kind}"}
+        return {"status": "failed", "error": f"unhandled kind {kind}"}
 
     async def worker(self) -> None:
         while True:
