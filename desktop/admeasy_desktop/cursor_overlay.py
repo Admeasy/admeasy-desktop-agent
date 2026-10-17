@@ -1,8 +1,14 @@
-"""Visible pink agent cursor during CUA (screen) actions."""
+"""Visible pink agent cursor during CUA (screen) actions.
+
+On macOS the app main thread runs pywebview; Tk/AppKit windows cannot be created on a
+background thread (crashes with NSWindow in admeasy-cursor). Overlay is disabled on darwin
+until a main-thread Cocoa implementation exists. CUA clicks still use pyautogui.
+"""
 from __future__ import annotations
 
 import logging
 import queue
+import sys
 import threading
 from dataclasses import dataclass
 
@@ -12,6 +18,7 @@ _enabled = True
 _thread: threading.Thread | None = None
 _cmds: queue.Queue | None = None
 _tk_available: bool | None = None
+_darwin_skip_logged = False
 
 
 @dataclass
@@ -26,9 +33,24 @@ def set_enabled(on: bool) -> None:
     _enabled = on
 
 
-def is_available() -> bool:
-    """True when Tk can be loaded (optional pink overlay)."""
+def _overlay_supported() -> bool:
+    """Tk overlay only on non-macOS hosts where we can run Tk on a worker thread."""
+    global _darwin_skip_logged
+    if sys.platform == "darwin":
+        if _enabled and not _darwin_skip_logged:
+            log.info(
+                "pink agent cursor overlay is off on macOS (Tk must run on main thread; "
+                "use ADMEASY_SHOW_AGENT_CURSOR=0 to silence). CUA clicks still work."
+            )
+            _darwin_skip_logged = True
+        return False
+    if threading.current_thread() is not threading.main_thread():
+        return False
     return _probe_tk()
+
+
+def is_available() -> bool:
+    return _overlay_supported()
 
 
 def _probe_tk() -> bool:
@@ -108,8 +130,7 @@ def ensure_started() -> None:
     global _thread, _cmds
     if not _enabled or _thread is not None:
         return
-    if not _probe_tk():
-        log.debug("skip cursor overlay (no _tkinter; brew install python-tk or ADMEASY_SHOW_AGENT_CURSOR=0)")
+    if not _overlay_supported():
         return
     _cmds = queue.Queue()
     _thread = threading.Thread(target=_run_ui, name="admeasy-cursor", daemon=True)
@@ -117,7 +138,7 @@ def ensure_started() -> None:
 
 
 def move_to(x: int, y: int) -> None:
-    if not _enabled:
+    if not _enabled or not _overlay_supported():
         return
     ensure_started()
     if _cmds is None:
@@ -126,7 +147,7 @@ def move_to(x: int, y: int) -> None:
 
 
 def click_flash() -> None:
-    if not _enabled:
+    if not _enabled or not _overlay_supported():
         return
     ensure_started()
     if _cmds is None:
@@ -135,7 +156,6 @@ def click_flash() -> None:
 
 
 def pointer_at(x: int, y: int, flash: bool = False) -> None:
-    """Show agent cursor without moving the OS pointer (preview / AX paths)."""
     move_to(x, y)
     if flash:
         click_flash()

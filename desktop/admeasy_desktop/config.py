@@ -41,7 +41,8 @@ class Settings:
     # default_first: URLs in your default browser + screen/CUA for interaction (keeps your logins).
     # playwright_profile: isolated ~/.admeasy/chrome-profile (automation only).
     browser_automation: str = "default_first"
-    show_agent_cursor: bool = True
+    # macOS: Tk overlay crashes off the main thread; default off (CUA still clicks via pyautogui).
+    show_agent_cursor: bool = field(default_factory=lambda: sys.platform != "darwin")
 
     @classmethod
     def load(cls) -> "Settings":

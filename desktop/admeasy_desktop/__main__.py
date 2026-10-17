@@ -128,11 +128,17 @@ def cmd_doctor() -> int:
         line("screenshot", False, str(e))
     from . import cursor_overlay
 
-    if s.show_agent_cursor and not cursor_overlay.is_available():
+    if sys.platform == "darwin" and s.show_agent_cursor:
+        line(
+            "agent cursor overlay",
+            False,
+            "disabled on macOS (webview owns main thread); set show_agent_cursor=false in ~/.admeasy/config.json",
+        )
+    elif s.show_agent_cursor and not cursor_overlay.is_available():
         line(
             "agent cursor (tkinter)",
             False,
-            "brew install python-tk@3.14 or export ADMEASY_SHOW_AGENT_CURSOR=0 (clicks still work)",
+            "install python-tk or set show_agent_cursor=false (clicks still work)",
         )
     elif s.show_agent_cursor:
         line("agent cursor (tkinter)", True, "pink overlay available")
