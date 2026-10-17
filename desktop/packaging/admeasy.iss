@@ -9,7 +9,7 @@
 [Setup]
 AppName=Admeasy
 AppVersion={#AppVersion}
-AppVerName={#AppVerName}
+AppVerName="{#AppVerName}"
 DefaultDirName={autopf}\Admeasy
 DefaultGroupName=Admeasy
 OutputBaseFilename=Admeasy-Setup

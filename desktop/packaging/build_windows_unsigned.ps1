@@ -2,7 +2,9 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 $Root = (Resolve-Path "..").Path
-$Ver = (python -c "import importlib.util; s=importlib.util.spec_from_file_location('m','$Root\admeasy_desktop\__init__.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(m.VERSION)")
+$InitPy = Join-Path $Root "admeasy_desktop\__init__.py"
+$Ver = (Select-String -Path $InitPy -Pattern '^VERSION\s*=\s*"([^"]+)"' | ForEach-Object { $_.Matches.Groups[1].Value })
+if (-not $Ver) { throw "Could not read VERSION from $InitPy" }
 if ($Ver -match '^(\d+\.\d+\.\d+)') {
     $InnoVer = "$($Matches[1]).0"
 } else {
