@@ -7,14 +7,15 @@ import urllib.request
 import pytest
 
 from admeasy_desktop import auth, policy
+from admeasy_desktop.coordinate_scaling import MAX_EDGE, Scaler
 from admeasy_desktop.executors import screen, system
 
 ROOTS = ["~/Downloads", "~/Documents"]
 
 
 def test_scaler_maps_retina_clicks_back_to_logical_points():
-    sc = screen.Scaler(logical=(1512, 982), physical=(3024, 1964))  # 14" MacBook, 2x
-    assert max(sc.w, sc.h) <= screen.MAX_EDGE
+    sc = Scaler(logical=(1512, 982), physical=(3024, 1964))  # 14" MacBook, 2x
+    assert max(sc.w, sc.h) <= MAX_EDGE
     x, y = sc.to_logical(sc.w / 2, sc.h / 2)
     assert abs(x - 756) <= 2 and abs(y - 491) <= 2
     assert sc.to_logical(10**6, 10**6) == (sc.lw - 1 + 0, sc.lh - 1 + 0) or sc.to_logical(10**6, 10**6)[0] < sc.lw

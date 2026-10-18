@@ -25,6 +25,7 @@ async def test_cua_screenshot_after_click_action(monkeypatch):
         "admeasy_desktop.executors.screen.settle_seconds",
         lambda action: 0.01,
     )
+    monkeypatch.setattr("admeasy_desktop.ui_settle.wait_for_settle", lambda *a, **k: 0.0)
     monkeypatch.setattr(
         "admeasy_desktop.executors.screen.screenshot",
         lambda: {"screenshot_b64": "AA==", "size": [1280, 800], "elements": [{"id": 1}]},
