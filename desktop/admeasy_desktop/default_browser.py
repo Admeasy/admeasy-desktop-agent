@@ -93,14 +93,22 @@ def default_browser() -> dict:
     return {"name": "unknown", "profile": "system_default", "profile_path": ""}
 
 
-def open_url_in_default_browser(url: str) -> None:
+def open_url_in_default_browser(url: str, reuse_tab: bool = True) -> dict:
+    """Open url in the default browser. On macOS an already-open tab for the same site is focused instead of
+    opening a duplicate (pass reuse_tab=False to force a new tab)."""
     info = default_browser()
     name = info.get("name") or ""
+    if sys.platform == "darwin" and reuse_tab:
+        from .tab_reuse import focus_existing_tab
+
+        hit = focus_existing_tab(name, url)
+        if hit:
+            return hit
     if sys.platform == "darwin":
         if name and name not in ("unknown", "Safari"):
             r = subprocess.run(["open", "-a", name, url], capture_output=True, timeout=20)
             if r.returncode == 0:
-                return
+                return {"reused": False}
         subprocess.run(["open", url], check=False, timeout=15)
     elif sys.platform == "win32":
         os.startfile(url)  # type: ignore[attr-defined, name-defined]
@@ -108,3 +116,4 @@ def open_url_in_default_browser(url: str) -> None:
         import webbrowser
 
         webbrowser.open(url)
+    return {"reused": False}

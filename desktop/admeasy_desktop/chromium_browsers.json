@@ -1,11 +1,57 @@
 {
   "_doc": "Chromium-family browsers Playwright can drive with the user's real profile. Paths use ~ for home. Edit here, not in code.",
-  "comet":  {"darwin": {"executable": "/Applications/Comet.app/Contents/MacOS/Comet",
-                        "user_data_dir": "~/Library/Application Support/Comet"}},
-  "chrome": {"darwin": {"executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-                        "user_data_dir": "~/Library/Application Support/Google/Chrome"}},
-  "brave":  {"darwin": {"executable": "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-                        "user_data_dir": "~/Library/Application Support/BraveSoftware/Brave-Browser"}},
-  "edge":   {"darwin": {"executable": "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-                        "user_data_dir": "~/Library/Application Support/Microsoft Edge"}}
+  "comet": {
+    "darwin": {
+      "executable": "/Applications/Comet.app/Contents/MacOS/Comet",
+      "user_data_dir": "~/Library/Application Support/Comet",
+      "app_name": "Comet",
+      "tab_dialect": "chromium"
+    }
+  },
+  "chrome": {
+    "darwin": {
+      "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "user_data_dir": "~/Library/Application Support/Google/Chrome",
+      "app_name": "Google Chrome",
+      "tab_dialect": "chromium"
+    }
+  },
+  "brave": {
+    "darwin": {
+      "executable": "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+      "user_data_dir": "~/Library/Application Support/BraveSoftware/Brave-Browser",
+      "app_name": "Brave Browser",
+      "tab_dialect": "chromium"
+    }
+  },
+  "edge": {
+    "darwin": {
+      "executable": "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+      "user_data_dir": "~/Library/Application Support/Microsoft Edge",
+      "app_name": "Microsoft Edge",
+      "tab_dialect": "chromium"
+    }
+  },
+  "arc": {
+    "darwin": {
+      "app_name": "Arc",
+      "tab_dialect": "chromium"
+    }
+  },
+  "safari": {
+    "darwin": {
+      "app_name": "Safari",
+      "tab_dialect": "safari"
+    }
+  },
+  "_tab_scripts": {
+    "chromium": {
+      "list": "tell application \"{app}\"\nset out to \"\"\nset wi to 0\nrepeat with w in windows\nset wi to wi + 1\nset ti to 0\nrepeat with t in tabs of w\nset ti to ti + 1\nset out to out & wi & \"|\" & ti & \"|\" & (URL of t) & linefeed\nend repeat\nend repeat\nreturn out\nend tell",
+      "activate": "tell application \"{app}\"\nset active tab index of window {w} to {t}\nset index of window {w} to 1\nactivate\nend tell"
+    },
+    "safari": {
+      "list": "tell application \"{app}\"\nset out to \"\"\nset wi to 0\nrepeat with w in windows\nset wi to wi + 1\nset ti to 0\nrepeat with t in tabs of w\nset ti to ti + 1\nset out to out & wi & \"|\" & ti & \"|\" & (URL of t) & linefeed\nend repeat\nend repeat\nreturn out\nend tell",
+      "activate": "tell application \"{app}\"\nset current tab of window {w} to tab {t} of window {w}\nset index of window {w} to 1\nactivate\nend tell"
+    }
+  }
 }
