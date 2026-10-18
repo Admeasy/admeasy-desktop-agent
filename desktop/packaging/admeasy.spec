@@ -44,7 +44,7 @@ datas = [(os.path.join(root, "admeasy_desktop", "ui", "index.html"), os.path.joi
          (os.path.join(root, "admeasy_desktop", "chromium_browsers.json"), "admeasy_desktop")]
 
 a = Analysis(
-    [os.path.join(root, "admeasy_desktop", "__main__.py")],
+    [os.path.join(SPECPATH, "entry.py")],
     pathex=[root],
     hiddenimports=hidden,
     datas=datas,

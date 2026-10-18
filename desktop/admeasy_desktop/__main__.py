@@ -12,16 +12,16 @@ import threading
 
 import httpx
 
-from . import VERSION, auth, permissions, system_hooks
-from .api import (
+from admeasy_desktop import VERSION, auth, permissions, system_hooks
+from admeasy_desktop.api import (
     DEVICES_DISABLED,
     DEVICES_NOT_DEPLOYED,
     DevicesDisabledError,
     DevicesNotDeployedError,
     devices_api_state,
 )
-from .config import CONFIG_PATH, LOG_DIR, Settings
-from .runtime import app_executable, frozen
+from admeasy_desktop.config import CONFIG_PATH, LOG_DIR, Settings
+from admeasy_desktop.runtime import app_executable, frozen
 
 
 def _enrol_caps(agent) -> dict:
@@ -29,9 +29,9 @@ def _enrol_caps(agent) -> dict:
 
 
 def cmd_run(background: bool) -> None:
-    from .agent import Agent
-    from .log_buffer import configure_logging
-    from .ui.server import UiState, serve
+    from admeasy_desktop.agent import Agent
+    from admeasy_desktop.log_buffer import configure_logging
+    from admeasy_desktop.ui.server import UiState, serve
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     configure_logging(str(LOG_DIR / "agent.log"))
     s = Settings.load()
@@ -56,7 +56,7 @@ def cmd_run(background: bool) -> None:
         system_hooks.keep_awake(s.keep_awake and not s.paused)
 
     if background and auth.state()["signed_in"]:
-        from .tray import start_tray
+        from admeasy_desktop.tray import start_tray
         start_tray(s.paused, set_paused, lambda: os._exit(0))
         threading.Event().wait()
         return
@@ -88,9 +88,9 @@ def cmd_run(background: bool) -> None:
 
 def cmd_click_test() -> int:
     """Corners + centre: real click, pointer check, overlay coordinate mapping."""
-    from . import cursor_overlay
-    from . import screen_coords_mac
-    from .executors import screen
+    from admeasy_desktop import cursor_overlay
+    from admeasy_desktop import screen_coords_mac
+    from admeasy_desktop.executors import screen
 
     ok = True
 
@@ -100,7 +100,7 @@ def cmd_click_test() -> int:
         print(f"[{'ok' if good else 'FAIL'}] {name}{(' - ' + detail) if detail else ''}")
 
     if sys.platform == "darwin":
-        from . import delivery_check, input_darwin
+        from admeasy_desktop import delivery_check, input_darwin
 
         ident = input_darwin.process_identity()
         app = delivery_check.responsible_app(ident)
@@ -140,7 +140,7 @@ def cmd_click_test() -> int:
         cursor_overlay.move_to(x, y)
         cursor_overlay.click_flash()
         if sys.platform == "darwin":
-            from . import input_darwin
+            from admeasy_desktop import input_darwin
 
             px, py = input_darwin.pointer_position()
             near = abs(px - x) <= 15 and abs(py - y) <= 15
@@ -172,10 +172,10 @@ def cmd_doctor(click_test: bool = False) -> int:
         ok &= bool(good)
         print(f"[{'ok' if good else 'FAIL'}] {name}{(' - ' + detail) if detail else ''}")
     line("version", True, f"{VERSION} on {platform.platform()}")
-    from .agent import Agent
+    from admeasy_desktop.agent import Agent
 
     line("contract_version", True, Agent(Settings()).capabilities().get("contract_version", "?"))
-    from .default_browser import default_browser
+    from admeasy_desktop.default_browser import default_browser
 
     db = default_browser()
     line("default_browser", bool(db.get("name")), f"{db.get('name')} profile_path={db.get('profile_path', '')[:80]}")
@@ -209,7 +209,7 @@ def cmd_doctor(click_test: bool = False) -> int:
         line(f"permission: {k}", perms.get(k), detail)
     if sys.platform == "darwin":
         try:
-            from . import input_darwin
+            from admeasy_desktop import input_darwin
 
             line(
                 "mouse/keyboard (CGEvent)",
@@ -221,12 +221,12 @@ def cmd_doctor(click_test: bool = False) -> int:
     chrome = shutil.which("google-chrome") or shutil.which("chrome") or sys.platform in ("darwin", "win32")
     line("Chrome (for browser control)", chrome, "install Google Chrome if browser ops fail")
     try:
-        from .executors import screen
+        from admeasy_desktop.executors import screen
         shot = screen.screenshot()
         line("screenshot", True, f"{shot['size'][0]}x{shot['size'][1]}")
     except Exception as e:
         line("screenshot", False, str(e))
-    from . import cursor_overlay
+    from admeasy_desktop import cursor_overlay
 
     if s.show_agent_cursor and not cursor_overlay.is_available():
         if sys.platform == "darwin":
@@ -263,7 +263,7 @@ def main() -> None:
     elif a.cmd == "doctor":
         sys.exit(cmd_doctor(click_test=getattr(a, "click_test", False)))
     elif a.cmd == "login":
-        from .agent import Agent
+        from admeasy_desktop.agent import Agent
         t = auth.login_via_browser(s.backend)
         for k in ("access_token", "refresh_token", "email"):
             auth.save_secret(k, t[k])
@@ -275,11 +275,11 @@ def main() -> None:
         permissions.check(prompt=True)
         print("signed in as", t["email"])
     elif a.cmd == "devices":
-        from .ui.server import UiState
+        from admeasy_desktop.ui.server import UiState
         for d in UiState(s).devices():
             print(("online " if d["online"] else "offline"), d["name"], d["platform"])
     elif a.cmd == "logout":
-        from .ui.server import UiState
+        from admeasy_desktop.ui.server import UiState
         UiState(s).logout()
 
 
