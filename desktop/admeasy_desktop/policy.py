@@ -4,6 +4,8 @@ Three layers, in order:
   1. HARD BLOCK  never runs, in any mode (disk wipe, shutdown, credential stores, the agent's own secrets).
   2. APPROVAL    risky actions pause and ask the user (answered from the phone). No answer in 120 s = no.
   3. FREE        read-only and routine UI actions run without asking.
+Modes: autopilot (default) never asks for opening, clicking, typing or navigating; it asks only before a destructive
+shell/file step, an install, or a final send/call. ask_risky, ask_always and trusted as before.
 This is a code-level gate on the machine itself, so it holds even if the cloud model is prompt-injected by a web page.
 """
 from __future__ import annotations
@@ -46,9 +48,44 @@ def in_roots(path: str, roots) -> bool:
     return any(full == r or full.startswith(r + os.sep) for r in _roots(roots))
 
 
+DELETE_KEYS = re.compile(r"(?i)^(cmd|command|super|win|ctrl|control)\+(delete|backspace)$")
+
+
+def _autopilot(kind: str, p: dict, roots) -> Verdict:
+    """UI work runs on its own; only irreversible steps pause. Captcha / needs_login stops are separate (executors)."""
+    if kind in ("shell", "terminal", "cli"):
+        cmd = str(p.get("command") or p.get("prompt") or p.get("data") or "")
+        if HARD_BLOCK.search(cmd):
+            return Verdict(False, reason="blocked: this command can destroy data or leak credentials", risk="blocked")
+        if RISKY_SHELL.search(cmd):
+            return Verdict(True, ask=True, reason=f"run: {cmd[:160]}", risk="high")
+        return Verdict(True, risk="medium")
+    if kind == "files":
+        op, path = p.get("op", "list"), str(p.get("path") or "")
+        if path and not in_roots(path, roots):
+            return Verdict(False, reason="that folder is not shared with Admeasy", risk="blocked")
+        return Verdict(True, ask=op == "delete", reason=f"{op} {path}", risk="high" if op == "delete" else "low")
+    if kind == "cua":
+        a = p.get("action") or {}
+        if a.get("type") == "key" and DELETE_KEYS.match(str(a.get("key") or "")):
+            return Verdict(True, ask=True, reason=f"press {a.get('key')}", risk="high")
+        return Verdict(True, reason=str(a.get("type")), risk="low")
+    if kind == "app" and p.get("op") in ("install", "uninstall"):
+        return Verdict(True, ask=True, reason=f"{p.get('op')} {p.get('name')}", risk="high")
+    if kind == "messages" and p.get("op") == "send":
+        return Verdict(True, ask=True, reason=f"SMS/iMessage to {p.get('to')}", risk="high")
+    if kind == "comms" and p.get("op") == "continuity_call":
+        return Verdict(True, ask=True, reason=f"call {p.get('number')}", risk="high")
+    if kind == "whatsapp" and p.get("op") == "send":
+        return Verdict(True, ask=True, reason="WhatsApp send", risk="high")
+    return Verdict(True, reason=kind, risk="low")
+
+
 def judge(kind: str, params: dict, mode: str, roots) -> Verdict:
     """kind = the job kind the backend sent. params = its arguments."""
     p = params or {}
+    if mode == "autopilot":
+        return _autopilot(kind, p, roots)
     if kind == "shell":
         cmd = str(p.get("command") or "")
         if HARD_BLOCK.search(cmd):
