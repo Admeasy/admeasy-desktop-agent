@@ -10,7 +10,7 @@ You are fixing **Computer Use (CUA)** and **voice/chat tool orchestration** for 
 
 1. Backend opens URLs/apps via `open` / `browser` tools, but **CUA loop stops after the first desktop screenshot** or never submits click/type jobs.
 2. Phone UI shows **"Looking into that" / "Working..."** while the Mac is idle.
-3. User device reports **Agent 0.4.0-beta.3** and **extension not connected** — structured browser falls back to screen CUA; the CUA loop must work without the extension.
+3. User device reports **Agent 0.4.0-beta.3** — browser work uses screen CUA (the Chrome extension was removed).
 4. Retrying with a follow-up prompt **reloads the same URL** instead of continuing from the last screenshot/history.
 
 ## Root causes to verify and fix
@@ -49,7 +49,7 @@ In `backend/app/agent.py` (or LangGraph turn):
 
 ### D. Tool routing
 
-- Prefer **`device__cua`** (or your device computer tool) for **native apps** (WhatsApp, Instagram desktop, Claude in Arc/Chrome) when extension is not connected.
+- Prefer **`device__cua`** (or your device computer tool) for **native apps** (WhatsApp, Instagram desktop, Claude in Arc/Chrome).
 - Do not only call `browser` `navigate` to `instagram.com` and stop — chain into CUA with goal text that references **element_id** from `elements[]` when SOM marks are present.
 - For WhatsApp desktop: goal should include "use search field" and **type** actions, not only `open`.
 
@@ -81,5 +81,4 @@ In `backend/app/agent.py` (or LangGraph turn):
 
 ## Do not
 
-- Rely on Chrome extension for these acceptance tests (user has `native_clients=0`).
 - Treat desktop `status: "ok"` as failure.

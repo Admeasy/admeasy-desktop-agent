@@ -35,35 +35,56 @@ def _use_quartz() -> bool:
         return False
 
 
+def _region_fingerprint(x: int, y: int, half: int = 120) -> bytes | None:
+    """Tiny grayscale thumbnail around a logical point: compared before/after an action to prove an effect."""
+    try:
+        import mss
+        from PIL import Image
+
+        with mss.mss() as sct:
+            raw = sct.grab({"left": int(x) - half, "top": int(y) - half, "width": half * 2, "height": half * 2})
+            img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX").convert("L").resize((32, 32))
+            return img.tobytes()
+    except Exception:
+        return None
+
+
+def _changed(a: bytes | None, b: bytes | None, threshold: float = 2.0) -> bool | None:
+    if a is None or b is None:
+        return None
+    diff = sum(abs(p - q) for p, q in zip(a, b)) / max(1, len(a))
+    return diff > threshold
+
+
 def _click_at(x: int, y: int, kind: str = "click") -> dict:
     if sys.platform == "darwin" and not _use_quartz():
         raise RuntimeError(
-            "Accessibility not granted — enable for Admeasy.app or your terminal in System Settings "
-            "(Privacy & Security → Accessibility)"
+            "Accessibility not granted to this executable — enable it for Admeasy.app (or the terminal "
+            "that launched the agent) in System Settings → Privacy & Security → Accessibility"
         )
+    before = _region_fingerprint(x, y)
     if _use_quartz():
         from .. import input_darwin
 
-        if kind == "right_click":
-            input_darwin.click(x, y, button="right")
-        elif kind == "double_click":
-            input_darwin.click(x, y, clicks=2)
-        elif kind == "middle_click":
-            input_darwin.click(x, y, button="middle")
-        else:
-            input_darwin.click(x, y)
-        ok = input_darwin.verify_click(x, y)
-        if not ok:
+        button = {"right_click": "right", "middle_click": "middle"}.get(kind, "left")
+        rep = input_darwin.click(x, y, button=button, clicks=2 if kind == "double_click" else 1)
+        if not rep.get("pointer_ok"):
             raise RuntimeError(
-                "mouse click did not move the cursor — grant Accessibility to this app "
-                "(Terminal, iTerm, or Admeasy.app) in System Settings"
+                "click was not delivered (cursor never reached the target) — macOS is dropping synthetic "
+                "input for this executable; re-grant Accessibility for it"
             )
-        return {"input": "quartz", "x": x, "y": y, "pointer_ok": ok}
-    pg = _pg()
-    pg.moveTo(x, y, duration=0.15)
-    {"click": pg.click, "right_click": pg.rightClick, "double_click": pg.doubleClick,
-     "middle_click": pg.middleClick}[kind]()
-    return {"input": "pyautogui", "x": x, "y": y, "pointer_ok": True}
+        info = {"input": "quartz", "x": x, "y": y, **rep}
+    else:
+        pg = _pg()
+        pg.moveTo(x, y, duration=0.15)
+        {"click": pg.click, "right_click": pg.rightClick, "double_click": pg.doubleClick,
+         "middle_click": pg.middleClick}[kind]()
+        px, py = pg.position()
+        info = {"input": "pyautogui", "x": x, "y": y, "pointer_ok": abs(px - x) <= 8 and abs(py - y) <= 8}
+    time.sleep(0.35)
+    info["screen_changed"] = _changed(before, _region_fingerprint(x, y))
+    info["effect"] = {True: "changed", False: "none", None: "unknown"}[info["screen_changed"]]
+    return info
 
 
 def _move_to(x: int, y: int) -> None:
@@ -81,21 +102,25 @@ def screenshot(monitor: int = 1, quality: int = 60, *, som: bool = True) -> dict
 
     from .. import a11y_tree, som as som_mod
 
-    pg = _pg()
     with mss.mss() as sct:
         mon = sct.monitors[min(monitor, len(sct.monitors) - 1)]
         raw = sct.grab(mon)
         img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
-    sc = Scaler(tuple(pg.size()), img.size)
+    # Geometry comes from the SAME monitor mss captured (points + origin), not pyautogui.size(), which is
+    # the main display only and mismatches on multi-monitor / scaled setups.
+    logical = (int(mon["width"]), int(mon["height"]))
+    origin = (int(mon.get("left", 0)), int(mon.get("top", 0)))
+    sc = Scaler(logical, img.size, monitor_origin=origin)
     img = img.resize((sc.w, sc.h), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=quality)
-    shot = {"screenshot_b64": base64.b64encode(buf.getvalue()).decode(), "size": [sc.w, sc.h]}
-    logical = tuple(pg.size())
+    shot = {"screenshot_b64": base64.b64encode(buf.getvalue()).decode(), "size": [sc.w, sc.h],
+            "geometry": {"logical": list(logical), "physical": list(raw.size),
+                         "origin": list(origin), "monitor": monitor}}
     if som:
         ax = a11y_tree.snapshot()
         if ax:
-            shot = som_mod.annotate_screenshot(shot, ax, logical_size=logical)
+            shot = som_mod.annotate_screenshot(shot, ax, logical_size=logical, origin=origin)
         else:
             shot["elements"] = []
     else:
@@ -107,6 +132,13 @@ _KEYS = {"return": "enter", "ctrl": "ctrl", "control": "ctrl", "super": "command
          "cmd": "command", "meta": "command", "win": "win", "alt": "alt", "option": "alt", "esc": "esc",
          "escape": "esc", "page_down": "pagedown", "page_up": "pageup", "backspace": "backspace", "delete": "delete",
          "space": "space", "tab": "tab", "up": "up", "down": "down", "left": "left", "right": "right"}
+
+
+def scaler_for(shot: dict) -> Scaler:
+    g = shot.get("geometry") or {}
+    if g.get("logical") and g.get("physical"):
+        return Scaler(tuple(g["logical"]), tuple(g["physical"]), monitor_origin=tuple(g.get("origin") or (0, 0)))
+    return Scaler(tuple(_pg().size()), tuple(shot["size"]))
 
 
 def parse_key(spec: str) -> list[str]:
@@ -138,6 +170,9 @@ def act(action: dict, scaler: Scaler | None = None) -> dict:
 
     pg = _pg()
     t = action.get("type")
+    if scaler is None and action.get("x") is not None:
+        # Never fall back to an identity mapping: model coords are screenshot pixels, not points.
+        scaler = scaler_for(screenshot(som=False))
     sc = scaler or Scaler(tuple(pg.size()), tuple(pg.size()))
     show_cursor = Settings.load().show_agent_cursor
     report: dict = {"type": t, "element_id": action.get("element_id") or action.get("mark")}
@@ -156,13 +191,16 @@ def act(action: dict, scaler: Scaler | None = None) -> dict:
     def _finish(extra: dict) -> dict:
         report.update(extra)
         log.info(
-            "cua act type=%s element_id=%s at=%s,%s input=%s pointer_ok=%s ax=%s",
+            "cua act type=%s element_id=%s at=%s,%s input=%s pointer_ok=%s effect=%s typed_ok=%s app=%s ax=%s",
             report.get("type"),
             report.get("element_id"),
             report.get("x"),
             report.get("y"),
             report.get("input"),
             report.get("pointer_ok"),
+            report.get("effect"),
+            report.get("typed_ok"),
+            report.get("target_app"),
             report.get("ax_ok"),
         )
         return report
@@ -186,25 +224,20 @@ def act(action: dict, scaler: Scaler | None = None) -> dict:
         x, y = pt()
         _show(x, y)
         _move_to(x, y)
-        return _finish({"x": x, "y": y, "input": "quartz" if _use_quartz() else "pyautogui", "pointer_ok": True})
+        return _finish({"x": x, "y": y, "input": "quartz" if _use_quartz() else "pyautogui",
+                        "pointer_ok": _pointer_at(x, y)})
     elif t == "drag":
         fx, fy = sc.to_logical(float(action["from_x"]), float(action["from_y"]))
         tx, ty = pt()
         _show(fx, fy)
         _move_to(fx, fy)
         _show(tx, ty)
-        if _use_quartz():
-            from .. import input_darwin
-
-            input_darwin.move_to(tx, ty)
-            input_darwin.click(tx, ty)
-        else:
-            pg.moveTo(fx, fy, duration=0.1)
-            pg.dragTo(tx, ty, duration=0.4, button="left")
-        return _finish({"x": tx, "y": ty, "input": "quartz" if _use_quartz() else "pyautogui", "pointer_ok": True})
+        pg.moveTo(fx, fy, duration=0.1)
+        pg.dragTo(tx, ty, duration=0.4, button="left")
+        return _finish({"x": tx, "y": ty, "input": "pyautogui", "pointer_ok": _pointer_at(tx, ty)})
     elif t == "type":
         eid = action.get("element_id") or action.get("mark")
-        click_info: dict = {"pointer_ok": True, "input": "quartz" if _use_quartz() else "pyautogui"}
+        click_info: dict = {"pointer_ok": None, "input": "quartz" if _use_quartz() else "pyautogui"}
         if eid is not None:
             from .. import som as som_mod
 
@@ -216,16 +249,8 @@ def act(action: dict, scaler: Scaler | None = None) -> dict:
             else:
                 raise ValueError(f"unknown element_id {eid}")
         text = str(action.get("text") or "")
-        paste_text(text)
-        return _finish(
-            {
-                **click_info,
-                "element_id": eid,
-                "typed_len": len(text),
-                "ax_ok": False,
-                "pointer_ok": True,
-            }
-        )
+        typed = type_text_verified(text)
+        return _finish({**click_info, "element_id": eid, "typed_len": len(text), "ax_ok": False, **typed})
     elif t in ("key", "hotkey"):
         keys = parse_key(action.get("key") or action.get("hotkey") or "enter")
         if _use_quartz() and len(keys) == 1:
@@ -238,7 +263,8 @@ def act(action: dict, scaler: Scaler | None = None) -> dict:
             input_darwin.key_combo(keys[:-1], keys[-1])
         else:
             pg.hotkey(*keys) if len(keys) > 1 else pg.press(keys[0])
-        return _finish({"input": "quartz" if _use_quartz() else "pyautogui", "key": action.get("key"), "pointer_ok": True})
+        return _finish({"input": "quartz" if _use_quartz() else "pyautogui", "key": action.get("key"),
+                        "pointer_ok": None})
     elif t == "scroll":
         sx, sy = pt() if action.get("x") is not None else (None, None)
         dy = int(action.get("dy") or 0)
@@ -262,7 +288,7 @@ def act(action: dict, scaler: Scaler | None = None) -> dict:
                 "dy": dy,
                 "dx": dx,
                 "input": "quartz" if _use_quartz() else "pyautogui",
-                "pointer_ok": True,
+                "pointer_ok": _pointer_at(sx, sy) if sx is not None else None,
             }
         )
     elif t in ("ax_press", "ax_type"):
@@ -278,15 +304,9 @@ def act(action: dict, scaler: Scaler | None = None) -> dict:
 
             if t == "ax_type":
                 click_info = _click_at(center[0], center[1], "click")
-                paste_text(str(action.get("text") or ""))
-                return _finish(
-                    {
-                        **click_info,
-                        "element_id": eid,
-                        "ax_ok": True,
-                        "typed_len": len(str(action.get("text") or "")),
-                    }
-                )
+                typed = type_text_verified(str(action.get("text") or ""))
+                return _finish({**click_info, "element_id": eid, "ax_ok": bool(typed.get("typed_ok")),
+                                "typed_len": len(str(action.get("text") or "")), **typed})
             proc = subprocess.run(
                 [
                     "osascript",
@@ -305,7 +325,7 @@ def act(action: dict, scaler: Scaler | None = None) -> dict:
                         "x": center[0],
                         "y": center[1],
                         "input": "osascript",
-                        "pointer_ok": True,
+                        "pointer_ok": None,
                     }
                 )
             click_info = _click_at(center[0], center[1], "click")
@@ -313,17 +333,56 @@ def act(action: dict, scaler: Scaler | None = None) -> dict:
         elif center:
             if t == "ax_type":
                 click_info = _click_at(center[0], center[1], "click")
-                paste_text(str(action.get("text") or ""))
-                return _finish({**click_info, "element_id": eid, "ax_ok": False})
+                typed = type_text_verified(str(action.get("text") or ""))
+                return _finish({**click_info, "element_id": eid, "ax_ok": False, **typed})
             click_info = _click_at(center[0], center[1], "click")
             return _finish({**click_info, "element_id": eid, "ax_ok": False})
-        return _finish({"element_id": eid, "ax_ok": ax_ok, "pointer_ok": True})
+        raise ValueError(f"unknown element_id {eid}")
     elif t == "wait":
         time.sleep(min(float(action.get("seconds") or 1), 10))
-        return _finish({"input": "sleep", "pointer_ok": True})
+        return _finish({"input": "sleep", "pointer_ok": None})
     elif t in (None, "screenshot"):
-        return _finish({"input": "none", "pointer_ok": True})
-    return _finish({"input": "unknown", "pointer_ok": True})
+        return _finish({"input": "none", "pointer_ok": None})
+    raise ValueError(f"unknown action type {t}")
+
+
+def _pointer_at(x, y) -> bool:
+    try:
+        if _use_quartz():
+            from .. import input_darwin
+
+            return input_darwin.verify_click(int(x), int(y))
+        px, py = _pg().position()
+        return abs(px - int(x)) <= 8 and abs(py - int(y)) <= 8
+    except Exception:
+        return False
+
+
+def type_text_verified(text: str) -> dict:
+    """Paste, then read the focused field back through Accessibility. If the paste didn't land, retype
+    as unicode key events. typed_ok: True verified, False verified-missing, None unreadable field."""
+    if not text:
+        return {"typed_ok": None, "typed_via": "none"}
+    readback = None
+    if _use_quartz():
+        from .. import input_darwin
+
+        readback = input_darwin.focused_value
+    before = readback() if readback else None
+    paste_text(text)
+    after = readback() if readback else None
+    probe = text.strip()[:40]
+    if after is not None and probe and probe in after:
+        return {"typed_ok": True, "typed_via": "paste"}
+    if readback and after is not None and after == before:
+        from .. import input_darwin
+
+        input_darwin.type_unicode(text)
+        time.sleep(0.15)
+        again = readback()
+        if again is not None:
+            return {"typed_ok": bool(probe and probe in again), "typed_via": "unicode"}
+    return {"typed_ok": None if after is None else False, "typed_via": "paste"}
 
 
 def paste_text(text: str) -> None:

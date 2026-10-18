@@ -79,7 +79,6 @@ class UiState:
     def snapshot(self) -> dict:
         s = auth.state()
         obj = {}
-        ext = {"installed": False}
         if self.agent:
             obj = {
                 "objective_id": self.agent.objective_id,
@@ -87,9 +86,6 @@ class UiState:
                 "rows_so_far": self.agent.rows_so_far,
                 "blocker": self.agent.blocker,
             }
-            from ..browser_bridge import extension_status
-
-            ext = extension_status()
         return {
             **s,
             "online": self.online,
@@ -100,7 +96,6 @@ class UiState:
             "settings": vars(self.settings),
             "devices": self.devices() if s["signed_in"] else [],
             "objective": obj,
-            "extension": ext,
         }
 
 
@@ -144,10 +139,6 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
                 state.settings.save()
                 system_hooks.keep_awake(state.settings.keep_awake and not state.settings.paused)
                 system_hooks.set_autostart(state.settings.start_at_login)
-            elif name == "install_extension":
-                from ..browser_bridge import full_extension_setup
-
-                return self._json({"ok": True, **full_extension_setup()})
             return self._json({"ok": True})
 
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)

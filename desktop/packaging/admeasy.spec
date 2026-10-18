@@ -40,13 +40,7 @@ if sys.platform == "darwin":
 if sys.platform == "win32":
     hidden += ["admeasy_desktop.cursor_overlay_win"]
 
-bridge = os.path.join(root, "browser_extension")
-native = os.path.join(root, "native_host")
 datas = [(os.path.join(root, "admeasy_desktop", "ui", "index.html"), os.path.join("admeasy_desktop", "ui"))]
-if os.path.isdir(bridge):
-    datas.append((bridge, "browser_extension"))
-if os.path.isdir(native):
-    datas.append((native, "native_host"))
 
 a = Analysis(
     [os.path.join(root, "admeasy_desktop", "__main__.py")],

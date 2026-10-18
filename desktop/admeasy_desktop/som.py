@@ -17,7 +17,8 @@ def _clickable(el: dict) -> bool:
     return bool(name) and role in ("statictext", "group", "image")
 
 
-def annotate_screenshot(shot: dict, ax_elements: list[dict], logical_size: tuple[int, int] | None = None) -> dict:
+def annotate_screenshot(shot: dict, ax_elements: list[dict], logical_size: tuple[int, int] | None = None,
+                        origin: tuple[int, int] = (0, 0)) -> dict:
     """Return shot with numbered marks; clicks use logical screen coordinates."""
     from PIL import Image, ImageDraw, ImageFont
 
@@ -46,7 +47,8 @@ def annotate_screenshot(shot: dict, ax_elements: list[dict], logical_size: tuple
     for i, el in enumerate(picked, start=1):
         lx, ly, bw, bh = int(el["x"]), int(el["y"]), int(el["w"]), int(el["h"])
         cx, cy = lx + bw // 2, ly + bh // 2
-        x, y = int(lx * sx), int(ly * sy)
+        # AX bounds are global points; the screenshot starts at the monitor origin.
+        x, y = int((lx - origin[0]) * sx), int((ly - origin[1]) * sy)
         w, h = max(4, int(bw * sx)), max(4, int(bh * sy))
         icx, icy = x + w // 2, y + h // 2
         stable = f"{frame_id}:{i}"

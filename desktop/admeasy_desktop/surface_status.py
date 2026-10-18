@@ -10,7 +10,6 @@ from . import VERSION
 from . import permissions
 from .default_browser import default_browser
 from .session_probe import probe_domain
-from .browser_bridge import extension_status
 from .session_registry import snapshot as sessions_snapshot
 
 
@@ -57,7 +56,6 @@ def collect(params: dict) -> dict[str, Any]:
     if isinstance(domains, str):
         domains = [domains]
     sessions = {str(d): probe_domain(str(d)) for d in domains if d}
-    ext = extension_status()
     return {
         "online": True,
         "os": platform.platform(),
@@ -68,8 +66,7 @@ def collect(params: dict) -> dict[str, Any]:
         "sessions": sessions,
         "active_app": _active_app(),
         "idle_seconds": _idle_seconds(),
-        "extension_installed": ext.get("installed"),
-        "extension_bridge": ext,
+        "extension_installed": False,  # Chrome extension removed; browser work uses screen CUA / Playwright
         "speed_tier": "medium",
         "timestamp": int(time.time()),
         "browser_automation_enforced": "default_first",

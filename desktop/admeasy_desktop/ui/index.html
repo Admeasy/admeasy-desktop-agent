@@ -27,17 +27,12 @@ async function draw(){
     `<div class="row"><span>${dot(v)}${k==='screen'?'Screen Recording':k==='full_disk'?'Full Disk Access (Messages, calls, notifications)':'Accessibility (mouse and keyboard)'}</span>${v?'<span class="mut">granted</span>':`<button class="ghost" onclick="api('open_settings',{which:'${k}'})">Grant</button>`}</div>`).join('');
   const devs=(s.devices||[]).map(d=>`<div class="row"><span>${dot(d.online)}${d.name} <span class="mut">${d.platform}</span></span><span class="mut">${d.online?'online':'offline'}</span></div>`).join('')||'<p class="mut">No devices yet.</p>';
   const obj=s.objective||{};
-  const ext=s.extension||{};
   $('#app').innerHTML=`<h1>${s.email}</h1><p class="mut">This computer is ${s.online?'<b>connected</b>':'offline'} · ${s.detail||''}</p>
    <div class="card"><b>Current objective</b>
      <div class="row"><span class="mut">id</span><span>${obj.objective_id||'—'}</span></div>
      <div class="row"><span class="mut">step</span><span>${obj.step||'—'}</span></div>
      <div class="row"><span class="mut">rows</span><span>${obj.rows_so_far||0}</span></div>
      <div class="row"><span class="mut">blocker</span><span>${obj.blocker||'—'}</span></div></div>
-   <div class="card"><b>Browser extension</b>
-     <div class="row"><span>${dot(ext.installed)}${ext.installed?'Installed':'Not installed'}</span>
-     <button class="ghost" id="ext">Install host + open Load unpacked</button></div>
-     <p class="mut">Fixed extension id: <code id="extid"></code> — enable Developer mode, Load unpacked from ~/.admeasy/extension</p></div>
    <div class="card"><b>Connected devices</b>${devs}</div>
    <div class="card"><b>Permissions</b>${perms}</div>
    <div class="card"><div class="row"><span>Ask me before risky actions</span><select id="mode">
@@ -55,8 +50,6 @@ async function draw(){
   $('#login_start').onchange=e=>api('settings',{start_at_login:e.target.checked});
   $('#paused').onchange=e=>api('settings',{paused:e.target.checked});
   $('#out').onclick=async()=>{await api('logout',{});draw()};
-  const ex=$('#ext'); if(ex) ex.onclick=()=>api('install_extension',{}).then(draw);
-  const eid=$('#extid'); if(eid) eid.textContent=(s.extension&&s.extension.extension_id)||'—';
 }
 draw();setInterval(draw,4000);
 </script>

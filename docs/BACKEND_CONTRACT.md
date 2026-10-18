@@ -6,7 +6,7 @@ Canonical server implementation: **admeasy-ai-assistant** `main` (device tools i
 
 The LLM picks `device_*` tools (no intent routing). See [COMPUTER_USE.md](COMPUTER_USE.md) and [WORKFLOW_DIAGNOSIS.md](WORKFLOW_DIAGNOSIS.md).
 
-**v0.4 highlights:** typed result `status`, `status`/`signin` job kinds, SOM + AX (macOS + Windows UIA), Chromium extension bridge, session probe (boolean only), idempotency + reconnect buffer, artifact append/upload, `skill_hints` on jobs for failure detection (no hardcoded site lists in desktop code).
+**v0.4 highlights:** typed result `status`, `status`/`signin` job kinds, SOM + AX (macOS + Windows UIA), session probe (boolean only), idempotency + reconnect buffer, artifact append/upload, `skill_hints` on jobs for failure detection (no hardcoded site lists in desktop code).
 
 **Browser policy (v0.4.0-beta.3+):** Desktop enforces **`default_first`** unless `task.params.force_playwright=true` or env `ADMEASY_PLAYWRIGHT=1`. Backend must not rely on isolated `~/.admeasy/chrome-profile` for user sessions. `hello.capabilities.playwright_requires` documents this.
 
@@ -81,7 +81,6 @@ Legacy `done`/`failed`/`denied` are normalized to `ok`/`error`/`blocked` on the 
 | `idempotency_key` | duplicate task after backend restart returns cached result (no double-act) |
 | `skill_hints` | strings from backend skills — used for captcha/login heuristics only |
 | `rate_limit_hints` | `{requests_per_minute, jitter_ms, daily_cap}` — desktop pacing |
-| `tab_pool_size` | max concurrent extension tabs (browser kind) |
 
 ### Permissions (`hello.permissions`)
 
@@ -113,7 +112,7 @@ Surface facts for `surfaces_status` (no recommendations):
 {"domains": ["example.com"]}
 ```
 
-Returns `online`, `os`, `agent_version`, `permissions`, `permissions_missing`, `default_browser`, `sessions` (per domain: `session_present`, `browser`, `last_seen_at` — **no cookie values**), `active_app`, `idle_seconds`, `extension_installed`, `speed_tier`, `timestamp`.
+Returns `online`, `os`, `agent_version`, `permissions`, `permissions_missing`, `default_browser`, `sessions` (per domain: `session_present`, `browser`, `last_seen_at` — **no cookie values**), `active_app`, `idle_seconds`, `extension_installed` (always false; extension removed), `speed_tier`, `timestamp`.
 
 ### `signin`
 
@@ -169,13 +168,12 @@ Desktop capabilities include `objectives.echo_objective_id: true`.
 
 ### `browser`
 
-**Order:** Chromium **extension bridge** (user profile) if installed → **`default_first`** screen/SOM → optional **`playwright_profile`**.
+**Order:** **`default_first`** (real browser + screen/SOM CUA) → Playwright profile for structured DOM ops. The Chrome extension bridge was removed (Oct 2026).
 
-Extension ops: `list_tabs`, `open_tab`, `navigate`, `read_page`, `extract` (`schema`), `query_elements`, `click_element`, `type_element`, `scroll`, `wait_for`, `screenshot_tab`, `close_tab` (background tabs when possible).
+Structured ops (`read_page`, `extract`, `query_elements`, `click_element`, `type_element`, …) run in the Playwright profile.
 
-**Extension identity (production):** fixed manifest `key` → extension id `apkfeonhbjpaplapnadecelcljpknplc`. Native host `allowed_origins` = `chrome-extension://apkfeonhbjpaplapnadecelcljpknplc/`. Install: desktop copies unpacked extension to `~/.admeasy/extension`, registers host, opens `chrome://extensions` (Load unpacked). Duplex path: agent socket `~/.admeasy/bridge/agent_addr.json` ↔ native host ↔ `chrome.runtime.connectNative`.
 
-`default_first`: `read`/`open`/`navigate` open the **default browser** and return screen capture + SOM. DOM ops without extension return `needs_human` + `interaction` hint.
+`default_first`: `read`/`open`/`navigate` open the **default browser** and return screen capture + SOM. Ops Playwright cannot serve return `use_cua` so the backend drives the screen.
 
 | op | params |
 |----|--------|
@@ -259,7 +257,7 @@ Paths must stay under `capabilities.files` (shared folders).
 
 ## Capabilities (`hello.capabilities`)
 
-Includes `contract_version`, `job_kinds` (17), `tools`, `browser`, `browser_modes` (+ `extension_bridge`), `set_of_mark`, `ax_tree`, `extension_bridge`, `native_apps`, `agent_cursor_overlay`, `objectives`, `cli_profiles`, `ide`, `terminal`, `files`, `approval_mode`, `keep_awake`.
+Includes `contract_version`, `job_kinds` (17), `tools`, `browser`, `browser_modes`, `set_of_mark`, `ax_tree`, `native_apps`, `agent_cursor_overlay`, `objectives`, `cli_profiles`, `ide`, `terminal`, `files`, `approval_mode`, `keep_awake`.
 
 ## Reconnect
 

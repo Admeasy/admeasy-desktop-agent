@@ -10,23 +10,33 @@ Prefer **signed** release assets when listed on GitHub. Unsigned builds use `-un
 2. Open the DMG → drag **Admeasy** to **Applications**.
 3. **Unsigned:** right-click **Open** once to bypass Gatekeeper.
 4. Sign in with Google; grant **Screen Recording**, **Accessibility**, and **Full Disk** if you use Messages/comms jobs.
-5. On the permissions page, use **One-click setup** to register the **browser extension** + native messaging host (Chrome / Edge / Brave).
+5. Grant **Screen Recording** and **Accessibility** to Admeasy.app (no browser extension is needed).
 6. Leave the app running (auto-starts at login).
 
 ## Windows
 
 1. Download **`Admeasy-0.4.0-beta.1-windows.exe`** (or unsigned) from Releases.
 2. Run the installer (WebView2 installed if needed).
-3. Sign in, grant permissions, run extension setup from the app UI.
+3. Sign in and grant Screen Recording + Accessibility.
 4. Optional: `pip install uiautomation` is bundled in the installer build for UI Automation snapshots.
 
 ## What’s new in 0.4
 
 - **Set-of-mark** clicks (`element_id`) on macOS and Windows
-- **Structured browser** via extension when installed; otherwise default browser + CUA
+- **Browser** via the default browser + screen CUA (Playwright for structured DOM ops)
 - **Long-run** helpers: idempotent jobs, reconnect resume, keep-awake during objectives
 - **Artifacts:** append CSV/XLSX in `~/.admeasy` shared folders; upload via presigned URL from backend
 
 ## Phone
 
 Approve sends, calls, installs, and destructive actions when prompted. The desktop has no chat UI — objectives show as step + row count in the window.
+
+## Input self-test (macOS)
+
+If clicks are reported but nothing happens, run from Terminal (Terminal needs Accessibility for this test):
+
+```
+cd admeasy-desktop-agent/desktop && python3 -m pip install --user pyobjc-framework-Quartz pyobjc-framework-ApplicationServices mss pyautogui && python3 scripts/selftest_input_mac.py
+```
+
+Send back every line starting with `SELFTEST` (no screenshots or text content are printed).

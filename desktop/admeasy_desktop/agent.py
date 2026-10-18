@@ -28,8 +28,6 @@ from .signin_handoff import run as signin_run
 from .surface_status import collect as surface_collect
 from .system_hooks import keep_awake
 from . import cursor_overlay
-from .bridge_server import start as start_bridge_server
-from .browser_bridge import extension_status
 
 log = logging.getLogger("admeasy-desktop")
 APPROVAL_WAIT_S = 120
@@ -67,14 +65,13 @@ class Agent:
             "screen": True,
             "mouse_keyboard": True,
             "browser": self.s.browser_automation,
-            "browser_modes": ["default_first", "playwright_profile", "extension_bridge"],
+            "browser_modes": ["default_first", "playwright_profile"],
             "playwright_requires": "params.force_playwright or ADMEASY_PLAYWRIGHT=1",
             "native_apps": True,
             "agent_cursor_overlay": self.s.show_agent_cursor and cursor_overlay.is_available(),
             "objectives": {"echo_objective_id": True},
             "set_of_mark": True,
             "ax_tree": sys.platform in ("darwin", "win32"),
-            "extension_bridge": extension_status(),
             "shell": True,
             "terminal": True,
             "cli_profiles": ["claude", "gemini", "cursor", "git"],
@@ -242,10 +239,11 @@ class Agent:
                 return {"status": "needs_login", "error": "sign-in required", "result": {"reason": "needs_login"}}
             if self.scaler is None and t not in (None, "screenshot", "wait"):
                 prime = await loop.run_in_executor(None, screen.screenshot)
-                self.scaler = screen.Scaler(tuple(screen._pg().size()), tuple(prime["size"]))
+                self.scaler = screen.scaler_for(prime)
             if t not in (None, "screenshot", "wait") and sys.platform == "darwin":
                 from . import input_darwin
 
+                input_darwin.log_identity(f"job={jid} action={t}")
                 if not input_darwin.accessibility_trusted():
                     return {
                         "status": "permission_missing",
@@ -283,7 +281,7 @@ class Agent:
                     ),
                 )
             shot = await loop.run_in_executor(None, screen.screenshot)
-            self.scaler = screen.Scaler(tuple(screen._pg().size()), tuple(shot["size"]))
+            self.scaler = screen.scaler_for(shot)
             if act_report:
                 shot["last_action"] = act_report
             shot.setdefault("elements", [])
@@ -372,7 +370,6 @@ class Agent:
 
     async def tunnel(self) -> None:
         self._loop = asyncio.get_running_loop()
-        start_bridge_server()
         if self.s.show_agent_cursor and cursor_overlay.is_available():
             cursor_overlay.set_enabled(True)
             cursor_overlay.ensure_started()

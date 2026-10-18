@@ -1,4 +1,4 @@
-"""Browser: extension bridge (logged-in profile) → default_first screen → optional Playwright profile."""
+"""Browser: default_first (real browser + screen CUA) → Playwright for structured DOM ops. No Chrome extension."""
 from __future__ import annotations
 
 import asyncio
@@ -7,7 +7,6 @@ import os
 
 from ..config import PROFILE_DIR, Settings
 from ..failure_detect import analyze as detect_failure
-from ..browser_bridge import extension_status, run_browser_op
 from ..pacing import wait_if_needed
 from .app_launch import open_url_default
 
@@ -56,7 +55,6 @@ async def _screen_snapshot(chars: int = 4000, skill_hints: list | None = None) -
         "interaction": "use cua with element_id from elements[]",
         "elements": shot.get("elements") or [],
         "ax_tree": shot.get("ax_tree") or ax,
-        "extension_installed": extension_status().get("installed"),
     }
     if fail:
         body["detected"] = fail
@@ -116,18 +114,11 @@ class Browser:
         return body, fail
 
     async def run_structured(self, p: dict) -> dict:
+        """Structured DOM ops run in the Playwright profile (the Chrome extension bridge was removed)."""
         domain = str(p.get("domain") or "")
         wait_if_needed(domain, p.get("rate_limit_hints"))
         async with self._tab_sem:
-            raw = await run_browser_op(p)
-        if raw is None:
-            return {"status": "needs_human", "error": "extension_not_installed", "result": {"extension_installed": False}}
-        st = raw.get("status") or "ok"
-        if st == "timeout":
-            return {"status": "timeout", "error": raw.get("reason"), "result": raw}
-        if st == "error":
-            return {"status": "error", "error": raw.get("reason"), "result": raw}
-        return {"status": "ok", "result": {**raw, "surface": "browser_extension", "extension_installed": True}}
+            return await self.run_playwright(p)
 
     async def run_default_first(self, p: dict) -> dict:
         op = p.get("op") or "read"
@@ -135,9 +126,7 @@ class Browser:
         hints = p.get("skill_hints") or []
 
         if op in STRUCTURED_OPS:
-            bridged = await self.run_structured(p)
-            if bridged.get("status") != "needs_human" or bridged.get("error") != "extension_not_installed":
-                return bridged
+            return await self.run_structured(p)
 
         if op in ("open", "navigate") and url:
             open_url_default(url if url.startswith("http") else f"https://{url}")
@@ -169,7 +158,7 @@ class Browser:
                 return {"status": "captcha", "error": fail.get("reason"), "result": snap}
             return {
                 "status": "needs_human",
-                "error": "use_cua_or_extension",
+                "error": "use_cua",
                 "result": snap,
             }
 
