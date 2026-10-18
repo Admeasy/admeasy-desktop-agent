@@ -100,10 +100,23 @@ def cmd_click_test() -> int:
         print(f"[{'ok' if good else 'FAIL'}] {name}{(' - ' + detail) if detail else ''}")
 
     if sys.platform == "darwin":
-        from . import input_darwin
+        from . import delivery_check, input_darwin
 
-        if not input_darwin.accessibility_trusted():
-            line("click-test", False, "grant Accessibility to Admeasy.app (or your terminal) first")
+        ident = input_darwin.process_identity()
+        app = delivery_check.responsible_app(ident)
+        line("responsible app (what macOS checks)", True,
+             f"{app} executable={ident.get('executable')} parent={ident.get('parent')}")
+        line("AXIsProcessTrusted", bool(ident.get("ax_trusted")), f"for {app}")
+        line("screen recording", ident.get("screen_capture") is not False, f"for {app}")
+        for tip in delivery_check.tcc_advice(ident):
+            print("  FIX: " + tip)
+        if not ident.get("ax_trusted"):
+            print("CLICK TEST FAILED: macOS will silently drop every click and keystroke from this process.")
+            return 1
+        good, detail = delivery_check.run_delivery_test()
+        line("click + type delivered to another app (TextEdit read-back)", good, detail)
+        if not good:
+            print(f"CLICK TEST FAILED: {detail}. Grant Accessibility to {app}, fully quit and reopen it, then retry.")
             return 1
     pg = screen._pg()
     w, h = pg.size()
@@ -240,7 +253,7 @@ def main() -> None:
     r = sub.add_parser("run")
     r.add_argument("--background", action="store_true")
     doc = sub.add_parser("doctor")
-    doc.add_argument("--click-test", action="store_true", help="click screen center + verify overlay")
+    doc.add_argument("--click-test", action="store_true", help="verify clicks/typing really reach apps (TextEdit read-back) + overlay mapping")
     for n in ("login", "devices", "logout"):
         sub.add_parser(n)
     a = ap.parse_args()
