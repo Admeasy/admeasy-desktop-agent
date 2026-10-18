@@ -27,7 +27,18 @@ if sys.platform == "win32":
 if sys.platform == "linux":
     hidden += ["tkinter", "_tkinter"]
 if sys.platform == "darwin":
-    hidden += ["AppKit", "Foundation", "objc"]
+    hidden += [
+        "AppKit",
+        "Foundation",
+        "objc",
+        "Quartz",
+        "ApplicationServices",
+        "admeasy_desktop.input_darwin",
+        "admeasy_desktop.cursor_overlay_mac",
+        "admeasy_desktop.screen_coords_mac",
+    ]
+if sys.platform == "win32":
+    hidden += ["admeasy_desktop.cursor_overlay_win"]
 
 bridge = os.path.join(root, "browser_extension")
 native = os.path.join(root, "native_host")
@@ -72,5 +83,7 @@ if sys.platform == "darwin":
             "NSDesktopFolderUsageDescription": "Admeasy reads and saves files in your Desktop folder when you ask.",
             "NSDocumentsFolderUsageDescription": "Admeasy reads and saves files in your Documents folder when you ask.",
             "NSDownloadsFolderUsageDescription": "Admeasy reads and saves files in your Downloads folder when you ask.",
+            "NSAccessibilityUsageDescription": "Admeasy moves the mouse and types on your Mac when you control it from your phone.",
+            "NSScreenCaptureUsageDescription": "Admeasy captures the screen so the assistant can see apps and websites.",
         },
     )

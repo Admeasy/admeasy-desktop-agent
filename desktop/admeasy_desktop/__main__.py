@@ -87,8 +87,9 @@ def cmd_run(background: bool) -> None:
 
 
 def cmd_click_test() -> int:
-    """Move to screen center, click once, flash AppKit/Tk overlay — verifies Accessibility + coords."""
+    """Corners + centre: real click, pointer check, overlay coordinate mapping."""
     from . import cursor_overlay
+    from . import screen_coords_mac
     from .executors import screen
 
     ok = True
@@ -102,26 +103,48 @@ def cmd_click_test() -> int:
         from . import input_darwin
 
         if not input_darwin.accessibility_trusted():
-            line("click-test", False, "grant Accessibility first (see doctor permission lines)")
+            line("click-test", False, "grant Accessibility to Admeasy.app (or your terminal) first")
             return 1
     pg = screen._pg()
     w, h = pg.size()
-    cx, cy = w // 2, h // 2
-    try:
-        info = screen._click_at(cx, cy, "click")
-        line("center click", True, f"{info}")
-    except Exception as e:
-        line("center click", False, str(e))
-        return 1
+    margin = max(40, min(w, h) // 20)
+    points = [
+        ("top-left", margin, margin),
+        ("top-right", w - margin, margin),
+        ("bottom-left", margin, h - margin),
+        ("bottom-right", w - margin, h - margin),
+        ("center", w // 2, h // 2),
+    ]
     cursor_overlay.set_enabled(True)
-    cursor_overlay.move_to(cx, cy)
-    cursor_overlay.click_flash()
-    if sys.platform == "darwin":
-        from . import input_darwin
+    for label, x, y in points:
+        try:
+            info = screen._click_at(x, y, "click")
+            line(f"click {label}", True, str(info))
+        except Exception as e:
+            line(f"click {label}", False, str(e))
+            ok = False
+            continue
+        cursor_overlay.move_to(x, y)
+        cursor_overlay.click_flash()
+        if sys.platform == "darwin":
+            from . import input_darwin
 
-        px, py = input_darwin.pointer_position()
-        line("cursor position", abs(px - cx) <= 12 and abs(py - cy) <= 12, f"pointer at {px},{py} expected ~{cx},{cy}")
-    line("overlay", cursor_overlay.is_available(), "pink ring at click point (hides after idle)")
+            px, py = input_darwin.pointer_position()
+            near = abs(px - x) <= 15 and abs(py - y) <= 15
+            line(f"pointer {label}", near, f"at {px},{py} expected ~{x},{y}")
+            ok &= near
+            tl = screen_coords_mac.window_top_left_for_center(x, y, 28)
+            line(
+                f"overlay map {label}",
+                abs(tl[0] - (x - 14)) < 1 and abs(tl[1] - (y - 14)) < 1,
+                f"top-left {tl}",
+            )
+        else:
+            pos = pg.position()
+            near = abs(pos[0] - x) <= 15 and abs(pos[1] - y) <= 15
+            line(f"pointer {label}", near, f"at {pos} expected ~{x},{y}")
+            ok &= near
+    line("overlay available", cursor_overlay.is_available(), "Win32 layered or AppKit")
     return 0 if ok else 1
 
 
@@ -136,6 +159,13 @@ def cmd_doctor(click_test: bool = False) -> int:
         ok &= bool(good)
         print(f"[{'ok' if good else 'FAIL'}] {name}{(' - ' + detail) if detail else ''}")
     line("version", True, f"{VERSION} on {platform.platform()}")
+    from .agent import Agent
+
+    line("contract_version", True, Agent(Settings()).capabilities().get("contract_version", "?"))
+    from .default_browser import default_browser
+
+    db = default_browser()
+    line("default_browser", bool(db.get("name")), f"{db.get('name')} profile_path={db.get('profile_path', '')[:80]}")
     try:
         r = httpx.get(s.backend.rstrip("/") + "/health", timeout=8)
         line("backend reachable", r.status_code == 200, s.backend)
@@ -160,7 +190,9 @@ def cmd_doctor(click_test: bool = False) -> int:
     for k in ("screen", "accessibility"):
         detail = "" if perms.get(k) else "System Settings > Privacy & Security"
         if k == "accessibility" and sys.platform == "darwin" and not perms.get(k):
-            detail = f"required for clicks/typing — enable for Admeasy.app or {sys.executable}"
+            detail = "enable Admeasy.app in Privacy & Security → Accessibility (packaged app)"
+        if k == "screen" and sys.platform == "darwin" and not perms.get(k):
+            detail = "enable Admeasy.app in Privacy & Security → Screen Recording"
         line(f"permission: {k}", perms.get(k), detail)
     if sys.platform == "darwin":
         try:
