@@ -21,6 +21,7 @@ from .executors.browser import Browser
 from .executors import whatsapp_exec
 from .failure_detect import analyze as detect_failure
 from .job_kinds import JOB_KINDS, TOOL_MANIFEST
+from .job_limits import job_idempotency_key, job_timeout_s
 from .job_store import JobStore
 from .policy import judge
 from .results import normalize as normalize_result
@@ -146,11 +147,24 @@ class Agent:
 
     async def run_job(self, job: dict) -> None:
         jid, kind, p = job["job_id"], job["kind"], job.get("params") or {}
-        idem = str(p.get("idempotency_key") or "")
+        # Every job gets a key: the backend's idempotency_key, else its job_id. A job re-delivered after a reconnect
+        # returns the stored result instead of clicking/typing a second time; one already running is not started twice.
+        idem = job_idempotency_key(jid, p)
         cached = self.store.get_idempotent(idem)
         if cached:
             await self.send({"type": "result", "job_id": jid, **cached})
             return
+        inflight = self.__dict__.setdefault("_inflight", set())
+        if idem in inflight:
+            log.info("job %s %s already running; duplicate ignored", jid, kind)
+            return
+        inflight.add(idem)
+        try:
+            await self._run_job(job, jid, kind, p, idem)
+        finally:
+            inflight.discard(idem)
+
+    async def _run_job(self, job: dict, jid: str, kind: str, p: dict, idem: str) -> None:
         self._track_objective(p, True)
         try:
             if self.s.paused:
@@ -173,7 +187,7 @@ class Agent:
                         if miss
                         else normalize_result(
                             kind,
-                            await asyncio.wait_for(self.dispatch(jid, kind, p), job.get("timeout_s", 300)),
+                            await asyncio.wait_for(self.dispatch(jid, kind, p), job_timeout_s(kind, job, p)),
                         )
                     )
         except asyncio.CancelledError:
@@ -188,8 +202,7 @@ class Agent:
         res = normalize_result(kind, res)
         res = self._attach_objective(p, res)
         res = self._attach_evidence(jid, res)
-        if idem:
-            self.store.put_idempotent(idem, res)
+        self.store.put_idempotent(idem, res)
         log.info("job %s %s -> %s", jid, kind, res.get("status"))
         await self.send({"type": "result", "job_id": jid, **res})
 
