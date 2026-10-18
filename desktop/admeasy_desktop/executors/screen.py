@@ -56,7 +56,11 @@ def _changed(a: bytes | None, b: bytes | None, threshold: float = 2.0) -> bool |
     return diff > threshold
 
 
+_LAST_CLICK: list = []  # logical (x, y) of the last click: typing is verified on the screen around it
+
+
 def _click_at(x: int, y: int, kind: str = "click") -> dict:
+    _LAST_CLICK[:] = [x, y]
     if sys.platform == "darwin" and not _use_quartz():
         raise RuntimeError(
             "Accessibility not granted to this executable — enable it for Admeasy.app (or the terminal "
@@ -358,31 +362,57 @@ def _pointer_at(x, y) -> bool:
         return False
 
 
+def type_verdict(probe: str, ax_after: str | None, ax_before: str | None, screen_changed: bool | None) -> bool | None:
+    """True = typed text verified, False = verified missing, None = can't tell. AX text wins over pixels."""
+    if ax_after is not None and probe and probe in ax_after:
+        return True
+    if ax_after is not None and ax_after != ax_before:
+        return True if screen_changed is not False else None
+    if screen_changed is True:
+        return True
+    if screen_changed is False or (ax_after is not None and ax_after == ax_before):
+        return False
+    return None
+
+
 def type_text_verified(text: str) -> dict:
-    """Paste, then read the focused field back through Accessibility. If the paste didn't land, retype
-    as unicode key events. typed_ok: True verified, False verified-missing, None unreadable field."""
+    """Paste, then verify through Accessibility (focused value) or, where AX can't read the field (web
+    editors like claude.ai), through the pixels around the last click. Not delivered -> retype as per-char
+    unicode key events and verify again. typed_ok: True verified, False verified-missing, None unknown."""
     if not text:
         return {"typed_ok": None, "typed_via": "none"}
     readback = None
+    extra: dict = {}
     if _use_quartz():
         from .. import input_darwin
 
         readback = input_darwin.focused_value
-    before = readback() if readback else None
-    paste_text(text)
-    after = readback() if readback else None
+        sp = input_darwin.secure_input_pid()
+        if sp:
+            extra["secure_input_pid"] = sp  # Secure Keyboard Entry drops all synthetic keys
+    region = list(_LAST_CLICK) if _LAST_CLICK else None
+    fp = (lambda: _region_fingerprint(region[0], region[1], half=220)) if region else (lambda: None)
     probe = text.strip()[:40]
-    if after is not None and probe and probe in after:
-        return {"typed_ok": True, "typed_via": "paste"}
-    if readback and after is not None and after == before:
+    ax_before, px_before = (readback() if readback else None), fp()
+    paste_text(text)
+    time.sleep(0.25)
+    ax_after = readback() if readback else None
+    ok = type_verdict(probe, ax_after, ax_before, _changed(px_before, fp()))
+    if ok:
+        return {"typed_ok": True, "typed_via": "paste", **extra}
+    if _use_quartz():
         from .. import input_darwin
 
         input_darwin.type_unicode(text)
-        time.sleep(0.15)
-        again = readback()
-        if again is not None:
-            return {"typed_ok": bool(probe and probe in again), "typed_via": "unicode"}
-    return {"typed_ok": None if after is None else False, "typed_via": "paste"}
+        time.sleep(0.25)
+        ok2 = type_verdict(probe, readback() if readback else None, ax_before, _changed(px_before, fp()))
+        if ok2 is not None or ok is None:
+            out = {"typed_ok": ok2, "typed_via": "unicode", **extra}
+            if ok2 is False:
+                out["error"] = ("typed text never appeared" + (" (Secure Keyboard Entry is on in pid %s)" %
+                                                               extra["secure_input_pid"] if extra else ""))
+            return out
+    return {"typed_ok": ok, "typed_via": "paste", **extra}
 
 
 def paste_text(text: str) -> None:
@@ -403,7 +433,7 @@ def paste_text(text: str) -> None:
     else:
         pg = _pg()
         pg.hotkey("command" if sys.platform == "darwin" else "ctrl", "v")
-    time.sleep(0.15)
+    time.sleep(0.5)  # browsers read the clipboard asynchronously: restoring too early pasted the old content
     if old is not None:
         try:
             pyperclip.copy(old)
