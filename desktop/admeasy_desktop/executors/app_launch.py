@@ -94,10 +94,10 @@ def launch(target: str) -> dict:
     return {"status": "done", "result": {"opened": app, "surface": "native_app"}}
 
 
-def open_url_default(url: str) -> None:
+def open_url_default(url: str, reuse_tab: bool = True) -> dict:
     from ..default_browser import open_url_in_default_browser
 
-    open_url_in_default_browser(url)
+    return open_url_in_default_browser(url, reuse_tab=reuse_tab) or {"reused": False}
 
 
 def _open_path(path: str) -> dict:

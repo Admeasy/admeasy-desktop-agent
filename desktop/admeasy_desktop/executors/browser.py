@@ -156,10 +156,12 @@ class Browser:
             return await self.run_structured(p)
 
         if op in ("open", "navigate") and url:
-            open_url_default(url if url.startswith("http") else f"https://{url}")
-            await asyncio.sleep(float(p.get("settle_s") or 2.0))
+            opened = open_url_default(url if url.startswith("http") else f"https://{url}",
+                                      reuse_tab=not p.get("new_tab"))
+            await asyncio.sleep(0.8 if opened.get("reused") else float(p.get("settle_s") or 2.0))
             snap, fail = await _screen_snapshot(skill_hints=hints)
             snap["url"] = url
+            snap["reused_tab"] = bool(opened.get("reused"))
             if fail and fail.get("status") == "captcha":
                 return {"status": "captcha", "error": fail.get("reason"), "result": snap}
             if fail:

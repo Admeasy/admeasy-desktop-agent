@@ -20,7 +20,9 @@ def _catalog() -> dict:
 
 def hint_for(browser_name: str) -> str:
     low = (browser_name or "").lower()
-    return next((k for k in _catalog() if not k.startswith("_") and k in low), "")
+    cat = _catalog()
+    return next((k for k, v in cat.items() if not k.startswith("_") and k in low
+                 and ((v or {}).get(sys.platform) or (v or {}).get("darwin") or {}).get("user_data_dir")), "")
 
 
 def resolve(hint: str, settings=None, platform: str | None = None, exists=os.path.exists) -> dict | None:
