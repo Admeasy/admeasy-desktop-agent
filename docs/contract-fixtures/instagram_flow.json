@@ -1,0 +1,16 @@
+{
+  "contract_version": "0.5.0",
+  "description": "Minimal Instagram-like CUA sequence; backend and desktop share this fixture.",
+  "steps": [
+    {"action": {"type": "screenshot"}},
+    {"action": {"type": "click", "element_id": 1}, "note": "Search icon"},
+    {"action": {"type": "type", "element_id": 2, "text": "edtech influencers"}},
+    {"action": {"type": "key", "key": "return"}},
+    {"action": {"type": "scroll", "x": 640, "y": 400, "dy": -120}},
+    {"action": {"type": "click", "element_id": 5}, "note": "Open profile"}
+  ],
+  "expect": {
+    "min_actions_with_screenshot": 6,
+    "distinct_screenshot_hashes": 6
+  }
+}

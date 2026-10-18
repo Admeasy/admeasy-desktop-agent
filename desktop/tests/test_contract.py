@@ -20,10 +20,13 @@ def test_hello_wire_fields():
     a = Agent(Settings())
     caps = a.capabilities()
     hello = {"type": "hello", "version": "0", "os_version": "x", "capabilities": caps,
-             "permissions": wire_snapshot()}
-    assert set(hello) >= {"type", "version", "os_version", "capabilities", "permissions"}
+             "permissions": wire_snapshot(), "contract_version": caps.get("contract_version")}
+    assert set(hello) >= {"type", "version", "os_version", "capabilities", "permissions", "contract_version"}
     assert set(hello["permissions"]) <= {"screen", "accessibility", "full_disk", "automation"}
     assert "job_kinds" in caps
+    assert caps["contract_version"] == "0.5.0"
+    assert "default_browser" in caps
+    assert "profile_path" in caps["default_browser"]
 
 
 def test_devices_api_state_interpretation():
