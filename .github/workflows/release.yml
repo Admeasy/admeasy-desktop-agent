@@ -2,13 +2,23 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Git tag to build and publish (must already exist on the remote)
+        required: true
+        default: v0.5.0-beta.1
 permissions:
   contents: write
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
 jobs:
   macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - name: Detect macOS signing secrets
@@ -41,9 +51,12 @@ jobs:
         if: steps.signmac.outputs.enabled == 'true'
         env:
           SIGN_ID: ${{ secrets.MAC_SIGN_ID }}
+          ADMEASY_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
         run: bash desktop/packaging/build_macos_release.sh
       - name: Build ad-hoc DMG (no signing secrets)
         if: steps.signmac.outputs.enabled != 'true'
+        env:
+          ADMEASY_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
         run: bash desktop/packaging/build_macos_release.sh
       - uses: actions/upload-artifact@v4
         with:
@@ -55,6 +68,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - name: Install Inno Setup
@@ -78,6 +93,8 @@ jobs:
           echo "SIGN_PFX=$env:RUNNER_TEMP\sign.pfx" >> $env:GITHUB_ENV
           echo "SIGN_PFX_PASSWORD=$env:WIN_SIGN_PFX_PASSWORD" >> $env:GITHUB_ENV
       - name: Build Windows installer
+        env:
+          ADMEASY_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
         run: powershell -ExecutionPolicy Bypass -File desktop/packaging/build_windows_release.ps1
       - uses: actions/upload-artifact@v4
         with:
@@ -95,7 +112,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
           generate_release_notes: true
           body_path: docs/INSTALL_BETA.md
           files: |
