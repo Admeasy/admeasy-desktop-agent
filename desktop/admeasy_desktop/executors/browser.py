@@ -5,10 +5,14 @@ import asyncio
 import base64
 import os
 
+import logging
+
 from ..config import PROFILE_DIR, Settings
 from ..failure_detect import analyze as detect_failure
 from ..pacing import wait_if_needed
 from .app_launch import open_url_default
+
+log = logging.getLogger(__name__)
 
 STRUCTURED_OPS = frozenset(
     {
@@ -74,6 +78,29 @@ class Browser:
 
         PROFILE_DIR.mkdir(parents=True, exist_ok=True)
         self.pw = await async_playwright().start()
+        s = Settings.load()
+        if s.playwright_real_profile:
+            from ..default_browser import default_browser
+            from ..real_profile import hint_for, resolve
+
+            db = default_browser()
+            name = str(db.get("name") or "").lower()
+            hint = hint_for(name)
+            rp = resolve(hint, s)
+            if rp:
+                try:
+                    self.ctx = await self.pw.chromium.launch_persistent_context(
+                        rp["user_data_dir"], executable_path=rp["executable"], headless=False, no_viewport=True,
+                        args=["--no-first-run", "--hide-crash-restore-bubble"],
+                        ignore_default_args=["--enable-automation"])
+                    log.info("playwright real profile browser=%s source=%s", hint or "custom", rp["source"])
+                    self.ctx.on("close", lambda *_: setattr(self, "ctx", None))
+                    return
+                except Exception as e:  # usually: the browser is open and holds the profile lock
+                    log.warning("playwright real profile unavailable (%s: %s); using the isolated profile",
+                                type(e).__name__, str(e)[:160])
+            else:
+                log.info("playwright real profile: no Chromium profile for default browser %r; isolated", name)
         try:
             self.ctx = await self.pw.chromium.launch_persistent_context(
                 str(PROFILE_DIR),

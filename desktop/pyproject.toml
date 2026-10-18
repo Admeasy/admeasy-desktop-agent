@@ -41,3 +41,6 @@ include = ["admeasy_desktop*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.setuptools.package-data]
+admeasy_desktop = ["chromium_browsers.json", "ui/*.html"]
