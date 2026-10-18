@@ -15,6 +15,7 @@ from websockets.exceptions import ConnectionClosed
 from . import VERSION, permissions
 from .auth import load_secret
 from .config import Settings, platform_name, ws_url
+from .default_browser import default_browser
 from .executors import app_exec, cli_exec, comms_exec, ide_exec, mail_exec, messages_exec, screen, system, terminal_exec
 from .executors.browser import Browser
 from .executors import whatsapp_exec
@@ -85,7 +86,8 @@ class Agent:
             "keep_awake": self.s.keep_awake,
             "job_kinds": sorted(JOB_KINDS),
             "tools": TOOL_MANIFEST,
-            "contract_version": "0.4.0",
+            "contract_version": "0.5.0",
+            "default_browser": default_browser(),
         }
 
     async def hello(self) -> None:
@@ -96,6 +98,7 @@ class Agent:
                 "os_version": platform.platform(),
                 "capabilities": self.capabilities(),
                 "permissions": permissions.wire_snapshot(),
+                "contract_version": self.capabilities().get("contract_version"),
             }
         )
         for pending in self.store.pop_pending():
@@ -270,8 +273,15 @@ class Agent:
                         "error": str(e),
                         "result": {"permissions_missing": ["accessibility"], "reason": "click_failed"},
                     }
-                delay = screen.settle_seconds(a)
-                await asyncio.sleep(delay)
+                from .ui_settle import wait_for_settle
+
+                await loop.run_in_executor(
+                    None,
+                    lambda: wait_for_settle(
+                        screen.screenshot,
+                        max_wait_s=max(screen.settle_seconds(a), 0.5),
+                    ),
+                )
             shot = await loop.run_in_executor(None, screen.screenshot)
             self.scaler = screen.Scaler(tuple(screen._pg().size()), tuple(shot["size"]))
             if act_report:

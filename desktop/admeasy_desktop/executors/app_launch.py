@@ -95,14 +95,9 @@ def launch(target: str) -> dict:
 
 
 def open_url_default(url: str) -> None:
-    import webbrowser
+    from ..default_browser import open_url_in_default_browser
 
-    if sys.platform == "darwin":
-        subprocess.run(["open", url], check=False, timeout=15)
-    elif sys.platform == "win32":
-        os.startfile(url)  # type: ignore[attr-defined]
-    else:
-        webbrowser.open(url)
+    open_url_in_default_browser(url)
 
 
 def _open_path(path: str) -> dict:

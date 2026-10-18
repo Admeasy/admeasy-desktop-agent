@@ -22,8 +22,23 @@ if sys.platform == "darwin":
     move_to = _mac.move_to
     click_flash = _mac.click_flash
     pointer_at = _mac.pointer_at
+    hide = _mac.hide
 
-    # Tests introspect these on the facade module.
+    _thread = None
+    _tk_available = None
+    _darwin_skip_logged = False
+
+elif sys.platform == "win32":
+    from . import cursor_overlay_win as _win
+
+    set_enabled = _win.set_enabled
+    is_available = _win.is_available
+    ensure_started = _win.ensure_started
+    move_to = _win.move_to
+    click_flash = _win.click_flash
+    pointer_at = _win.pointer_at
+    hide = _win.hide
+
     _thread = None
     _tk_available = None
     _darwin_skip_logged = False

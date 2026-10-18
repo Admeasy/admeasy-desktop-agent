@@ -14,21 +14,7 @@ import time
 
 log = logging.getLogger("admeasy-desktop")
 
-MAX_EDGE = 1280
-MAX_PIXELS = 1_150_000
-
-
-class Scaler:
-    def __init__(self, logical: tuple[int, int], physical: tuple[int, int]):
-        self.lw, self.lh = logical
-        pw, ph = physical
-        k = min(1.0, MAX_EDGE / max(pw, ph), (MAX_PIXELS / (pw * ph)) ** 0.5)
-        self.w, self.h = max(1, int(pw * k)), max(1, int(ph * k))
-
-    def to_logical(self, x: float, y: float) -> tuple[int, int]:
-        x = min(max(x, 0), self.w - 1)
-        y = min(max(y, 0), self.h - 1)
-        return int(x * self.lw / self.w), int(y * self.lh / self.h)
+from ..coordinate_scaling import MAX_EDGE, MAX_PIXELS, Scaler
 
 
 def _pg():
@@ -240,8 +226,8 @@ def act(action: dict, scaler: Scaler | None = None) -> dict:
                 "pointer_ok": True,
             }
         )
-    elif t == "key":
-        keys = parse_key(action.get("key") or "enter")
+    elif t in ("key", "hotkey"):
+        keys = parse_key(action.get("key") or action.get("hotkey") or "enter")
         if _use_quartz() and len(keys) == 1:
             from .. import input_darwin
 
