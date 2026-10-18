@@ -215,14 +215,23 @@ def _keycode(name: str) -> int | None:
     return _KEYCODES.get(str(name).lower())
 
 
+_MOD_KEYCODES = {"kCGEventFlagMaskCommand": 55, "kCGEventFlagMaskShift": 56, "kCGEventFlagMaskAlternate": 58,
+                 "kCGEventFlagMaskControl": 59, "kCGEventFlagMaskSecondaryFn": 63}
+
+
 def key_combo(modifiers: list[str], key: str) -> None:
-    """modifiers: command, shift, alt, ctrl, fn; key: a name from _KEYCODES or any single character."""
+    """modifiers: command, shift, alt, ctrl, fn; key: a name from _KEYCODES or any single character.
+
+    The modifier keys themselves are pressed and released around the key (not just flags on the key event):
+    Chromium-based browsers (Chrome, Comet) ignore a flags-only Cmd+V posted at the HID tap."""
     q = _quartz()
     flags = 0
+    mod_attrs = []
     for m in modifiers:
         attr = _MODS.get(m.lower())
         if attr:
             flags |= getattr(q, attr)
+            mod_attrs.append(attr)
     code = _keycode(key)
     tap = _tap(q)
     if code is None:
@@ -236,27 +245,62 @@ def key_combo(modifiers: list[str], key: str) -> None:
     else:
         down = q.CGEventCreateKeyboardEvent(None, code, True)
         up = q.CGEventCreateKeyboardEvent(None, code, False)
+    held = 0
+    for attr in mod_attrs:
+        held |= getattr(q, attr)
+        ev = q.CGEventCreateKeyboardEvent(None, _MOD_KEYCODES[attr], True)
+        q.CGEventSetFlags(ev, held)
+        q.CGEventPost(tap, ev)
+        time.sleep(0.01)
     if flags:
         q.CGEventSetFlags(down, flags)
         q.CGEventSetFlags(up, flags)
     q.CGEventPost(tap, down)
     time.sleep(0.02)
     q.CGEventPost(tap, up)
+    for attr in reversed(mod_attrs):
+        held &= ~getattr(q, attr)
+        ev = q.CGEventCreateKeyboardEvent(None, _MOD_KEYCODES[attr], False)
+        q.CGEventSetFlags(ev, held)
+        q.CGEventPost(tap, ev)
+        time.sleep(0.01)
 
 
-def type_unicode(text: str, chunk: int = 20) -> None:
-    """Type text directly as unicode key events (no clipboard)."""
+def type_unicode(text: str, chunk: int = 1) -> None:
+    """Type text as unicode key events (no clipboard). One character per event by default: Chromium and
+    Electron apps take only the first character of a multi-character unicode key event."""
     q = _quartz()
     tap = _tap(q)
-    for i in range(0, len(text), chunk):
+    for i in range(0, len(text), max(1, chunk)):
         part = text[i:i + chunk]
+        if part == "\n":
+            key_combo([], "return")
+            continue
         down = q.CGEventCreateKeyboardEvent(None, 0, True)
         up = q.CGEventCreateKeyboardEvent(None, 0, False)
         q.CGEventKeyboardSetUnicodeString(down, len(part), part)
         q.CGEventKeyboardSetUnicodeString(up, len(part), part)
         q.CGEventPost(tap, down)
         q.CGEventPost(tap, up)
-        time.sleep(0.02)
+        time.sleep(0.012)
+
+
+def parse_secure_input_pid(ioreg_text: str) -> int | None:
+    import re
+
+    m = re.search(r'"kCGSSessionSecureInputPID"\s*=\s*(\d+)', ioreg_text or "")
+    return int(m.group(1)) if m and int(m.group(1)) > 0 else None
+
+
+def secure_input_pid() -> int | None:
+    """PID of the app holding Secure Keyboard Entry (password field, Terminal option): it blocks typing."""
+    try:
+        import subprocess
+
+        out = subprocess.run(["ioreg", "-l", "-w", "0", "-d", "4"], capture_output=True, text=True, timeout=3).stdout
+        return parse_secure_input_pid(out)
+    except Exception:
+        return None
 
 
 def focused_value() -> str | None:
