@@ -40,7 +40,8 @@ if sys.platform == "darwin":
 if sys.platform == "win32":
     hidden += ["admeasy_desktop.cursor_overlay_win"]
 
-datas = [(os.path.join(root, "admeasy_desktop", "ui", "index.html"), os.path.join("admeasy_desktop", "ui"))]
+datas = [(os.path.join(root, "admeasy_desktop", "ui", "index.html"), os.path.join("admeasy_desktop", "ui")),
+         (os.path.join(root, "admeasy_desktop", "chromium_browsers.json"), "admeasy_desktop")]
 
 a = Analysis(
     [os.path.join(root, "admeasy_desktop", "__main__.py")],

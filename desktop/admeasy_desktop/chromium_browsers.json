@@ -1,0 +1,11 @@
+{
+  "_doc": "Chromium-family browsers Playwright can drive with the user's real profile. Paths use ~ for home. Edit here, not in code.",
+  "comet":  {"darwin": {"executable": "/Applications/Comet.app/Contents/MacOS/Comet",
+                        "user_data_dir": "~/Library/Application Support/Comet"}},
+  "chrome": {"darwin": {"executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                        "user_data_dir": "~/Library/Application Support/Google/Chrome"}},
+  "brave":  {"darwin": {"executable": "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+                        "user_data_dir": "~/Library/Application Support/BraveSoftware/Brave-Browser"}},
+  "edge":   {"darwin": {"executable": "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                        "user_data_dir": "~/Library/Application Support/Microsoft Edge"}}
+}
