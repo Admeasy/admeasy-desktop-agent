@@ -36,7 +36,7 @@ async function draw(){
    <div class="card"><b>Connected devices</b>${devs}</div>
    <div class="card"><b>Permissions</b>${perms}</div>
    <div class="card"><div class="row"><span>Ask me before risky actions</span><select id="mode">
-     ${[['ask_risky','Risky only'],['ask_always','Every action'],['trusted','Never (trusted)']].map(([v,t])=>`<option value="${v}" ${s.settings.approval_mode===v?'selected':''}>${t}</option>`).join('')}</select></div>
+     ${[['autopilot','Autopilot (only deletes/sends ask)'],['ask_risky','Risky only'],['ask_always','Every action'],['trusted','Never (trusted)']].map(([v,t])=>`<option value="${v}" ${s.settings.approval_mode===v?'selected':''}>${t}</option>`).join('')}</select></div>
    <div class="row"><span>Show pink agent cursor on screen</span><input type="checkbox" id="cursor" ${s.settings.show_agent_cursor?'checked':''}></div>
    <div class="row"><span>Keep this computer awake</span><input type="checkbox" id="awake" ${s.settings.keep_awake?'checked':''}></div>
    <div class="row"><span>Start at login</span><input type="checkbox" id="login_start" ${s.settings.start_at_login?'checked':''}></div>

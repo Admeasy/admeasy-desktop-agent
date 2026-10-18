@@ -47,7 +47,7 @@ async def test_task_approval_result_roundtrip(monkeypatch, tmp_path):
     async with websockets.serve(backend, "127.0.0.1", 0) as srv:
         port = srv.sockets[0].getsockname()[1]
         monkeypatch.setattr(agent_mod, "load_secret", lambda k: {"device_id": "d", "device_token": "t"}.get(k))
-        s = Settings(backend=f"http://127.0.0.1:{port}", shared_folders=[str(tmp_path)])
+        s = Settings(backend=f"http://127.0.0.1:{port}", shared_folders=[str(tmp_path)], approval_mode="ask_risky")
         # the real backend path is /devices/tunnel; the stub accepts any path
         a = agent_mod.Agent(s)
         t = asyncio.create_task(a.tunnel())

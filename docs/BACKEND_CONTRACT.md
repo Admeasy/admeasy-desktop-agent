@@ -94,7 +94,7 @@ Kinds `screenshot` / `cua` require `screen` + `accessibility`. Kinds `messages` 
 
 ### Policy (desktop gate)
 
-Independent of the cloud model: hard-block destructive shell patterns; **phone approval** for sends, calls, payments-ish text, installs, and risky shell unless `approval_mode=trusted`. Modes: `ask_risky` (default), `ask_always`, `trusted`.
+Independent of the cloud model: hard-block destructive shell patterns; **phone approval** for sends, calls, payments-ish text, installs, and risky shell unless `approval_mode=trusted`. Modes: `autopilot` (default: open/click/type/navigate never ask; destructive shell/file steps, installs and final sends/calls ask), `ask_risky`, `ask_always`, `trusted`.
 
 ---
 

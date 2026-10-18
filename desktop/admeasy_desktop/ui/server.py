@@ -136,6 +136,8 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
                         state.settings, k
                     ):
                         setattr(state.settings, k, v)
+                        if k == "approval_mode":
+                            state.settings.approval_mode_chosen = True
                 state.settings.save()
                 system_hooks.keep_awake(state.settings.keep_awake and not state.settings.paused)
                 system_hooks.set_autostart(state.settings.start_at_login)

@@ -65,6 +65,27 @@ async def _screen_snapshot(chars: int = 4000, skill_hints: list | None = None) -
     return body, fail
 
 
+_FOCUSED_TEXT_JS = """() => { const e = document.activeElement; if (!e) return null;
+  if ('value' in e && typeof e.value === 'string') return e.value;
+  return e.isContentEditable ? (e.innerText || e.textContent || '') : null; }"""
+
+
+def typed_check(text: str, field: str | None) -> bool | None:
+    """True: the field holds what was typed. False: readable but missing. None: can't read the field."""
+    if field is None or not text:
+        return None
+    norm = lambda v: " ".join(str(v).split())
+    probe = norm(text)[:60]
+    return probe in norm(field)
+
+
+async def page_typed_ok(page, text: str) -> bool | None:
+    try:
+        return typed_check(text, await page.evaluate(_FOCUSED_TEXT_JS))
+    except Exception:
+        return None
+
+
 class Browser:
     def __init__(self):
         self.pw = None
@@ -199,6 +220,7 @@ class Browser:
         try:
             page = await self.page()
             op = p.get("op") or "read"
+            typed = None
             if op in STRUCTURED_OPS:
                 return await self.run_structured(p)
             if op in ("open", "navigate") and p.get("url"):
@@ -217,7 +239,9 @@ class Browser:
             elif op == "type":
                 if p.get("selector"):
                     await page.locator(p["selector"]).first.click(timeout=8000)
-                await page.keyboard.insert_text(str(p.get("text") or ""))
+                text = str(p.get("text") or "")
+                await page.keyboard.insert_text(text)
+                typed = await page_typed_ok(page, text)
             elif op == "press":
                 await page.keyboard.press(str(p.get("key") or "Enter"))
             elif op == "scroll":
@@ -230,7 +254,12 @@ class Browser:
                     pass
             elif op == "fill":
                 loc = page.locator(p["selector"]).first if p.get("selector") else page.locator("input,textarea").first
-                await loc.fill(str(p.get("text") or ""), timeout=8000)
+                text = str(p.get("text") or "")
+                await loc.fill(text, timeout=8000)
+                try:
+                    typed = typed_check(text, await loc.input_value(timeout=2000))
+                except Exception:
+                    typed = await page_typed_ok(page, text)
             elif op == "hover":
                 if p.get("selector"):
                     await page.locator(p["selector"]).first.hover(timeout=8000)
@@ -267,8 +296,13 @@ class Browser:
                 dl = await dl_info.value
                 path = await dl.path()
                 return {"status": "ok", "result": {"path": path, "suggested_filename": dl.suggested_filename}}
+            if typed is False:
+                return {"status": "error", "error": "typed text did not appear in the field",
+                        "result": {"typed_ok": False}}
             await page.wait_for_timeout(400)
             snap, fail = await self.snapshot(page, 8000 if op == "read" else 4000, hints)
+            if typed is not None and isinstance(snap, dict):
+                snap["typed_ok"] = typed
             if fail and fail.get("status") == "captcha":
                 return {"status": "captcha", "error": fail.get("reason"), "result": snap}
             if fail:

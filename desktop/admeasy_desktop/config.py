@@ -32,7 +32,10 @@ class Settings:
     device_name: str = field(default_factory=default_device_name)
     # ask_always: every action asks. ask_risky: shell/delete/overwrite/send ask, the rest run. trusted: nothing asks
     # except the hard-blocked list. The phone answers approvals; the desktop never asks locally unless nobody replies.
-    approval_mode: str = "ask_risky"
+    # autopilot (default): open/click/type/navigate never ask; destructive shell/file steps, installs and final
+    # sends/calls do.
+    approval_mode: str = "autopilot"
+    approval_mode_chosen: bool = False  # set when the user picks a mode in the UI
     shared_folders: list[str] = field(default_factory=lambda: [str(Path.home() / d) for d in
                                                                 ("Downloads", "Desktop", "Documents")])
     keep_awake: bool = True
@@ -55,7 +58,10 @@ class Settings:
             raw = json.loads(CONFIG_PATH.read_text())
             if raw.get("browser_automation") == "playwright_profile" and not os.environ.get("ADMEASY_PLAYWRIGHT"):
                 raw["browser_automation"] = "default_first"
-            return cls(**{k: v for k, v in raw.items() if k in cls.__dataclass_fields__})
+            s = cls(**{k: v for k, v in raw.items() if k in cls.__dataclass_fields__})
+            if s.approval_mode == "ask_risky" and not s.approval_mode_chosen:
+                s.approval_mode = "autopilot"  # old installs saved the previous default, not a choice
+            return s
         except Exception:
             return cls()
 
