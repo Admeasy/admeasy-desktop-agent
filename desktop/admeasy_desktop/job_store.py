@@ -6,6 +6,15 @@ import threading
 from pathlib import Path
 
 STORE = Path.home() / ".admeasy" / "job_store.json"
+MAX_IDEMPOTENT = 200
+
+
+def _slim(payload: dict) -> dict:
+    """Screenshots are not kept for replays; the result facts are."""
+    body = payload.get("result") if isinstance(payload, dict) else None
+    if isinstance(body, dict) and "screenshot_b64" in body:
+        return {**payload, "result": {k: v for k, v in body.items() if k != "screenshot_b64"}}
+    return payload
 
 
 class JobStore:
@@ -36,7 +45,11 @@ class JobStore:
         if not key:
             return
         with self._lock:
-            self._data.setdefault("idempotent", {})[key] = payload
+            idem = self._data.setdefault("idempotent", {})
+            idem.pop(key, None)
+            idem[key] = _slim(payload)
+            for old in list(idem)[:-MAX_IDEMPOTENT]:  # every job now has a key: keep the newest only
+                idem.pop(old, None)
             self._save()
 
     def buffer_result(self, msg: dict) -> None:
