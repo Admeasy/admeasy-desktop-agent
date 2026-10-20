@@ -13,7 +13,7 @@ cd desktop
 ./scripts/setup-venv.sh          # Windows: powershell -File scripts/setup-venv.ps1
 source .venv/bin/activate
 python -m admeasy_desktop doctor
-python -m admeasy_desktop login    # Google sign-in + device enrolment
+python -m admeasy_desktop login    # invite code, then Google sign-in + device enrolment
 python -m admeasy_desktop run      # local UI: status, permissions, live logs
 ```
 

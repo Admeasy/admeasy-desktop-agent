@@ -15,6 +15,16 @@ from websockets.exceptions import ConnectionClosed
 from . import VERSION, permissions
 from .auth import load_secret
 from .config import Settings, platform_name, ws_url
+from .entitlements import (
+    COMPUTER_USE_ACTION,
+    EXEMPT_KINDS,
+    UPGRADE_URL,
+    EntitlementsClient,
+    EntitlementsError,
+    feature_message,
+    limit_message,
+    required_features,
+)
 from .default_browser import default_browser
 from .executors import app_exec, cli_exec, comms_exec, ide_exec, mail_exec, messages_exec, screen, system, terminal_exec
 from .executors.browser import Browser
@@ -52,6 +62,8 @@ class Agent:
         self.rows_so_far: int = 0
         self.blocker: str = ""
         self._objective_jobs: int = 0
+        self.entitlements = EntitlementsClient(settings.backend)
+        self._snap = None
 
     async def send(self, msg: dict) -> None:
         async with self.send_lock:
@@ -75,7 +87,7 @@ class Agent:
             "ax_tree": sys.platform in ("darwin", "win32"),
             "shell": True,
             "terminal": True,
-            "cli_profiles": ["claude", "gemini", "cursor", "git"],
+            "cli_profiles": self._cli_profiles(),
             "files": self.s.shared_folders,
             "clipboard": True,
             "ide": ["cursor", "vscode"],
@@ -86,9 +98,46 @@ class Agent:
             "tools": TOOL_MANIFEST,
             "contract_version": "0.5.0",
             "default_browser": default_browser(),
+            "plan": self._plan_caps(),
         }
 
+    def _cli_profiles(self) -> list[str]:
+        profiles = ["claude", "gemini", "cursor", "git"]
+        snap = self._snap
+        if snap is None or not snap.allows("claude"):
+            profiles = [p for p in profiles if p != "claude"]
+        return profiles
+
+    def _plan_caps(self) -> dict:
+        snap = self._snap
+        if snap is None:
+            return {
+                "family": None,
+                "models": ["sarvam", "groq"],
+                "features": {
+                    "local_machine": True,
+                    "virtual_machine": False,
+                    "claude": False,
+                    "vision": False,
+                    "deep_agents": False,
+                },
+                "vision": False,
+            }
+        return {
+            "family": snap.plan_family or snap.plan or None,
+            "models": list(snap.models),
+            "features": dict(snap.features),
+            "vision": snap.allows("vision"),
+        }
+
+    def refresh_entitlements(self) -> None:
+        try:
+            self._snap = self.entitlements.me()
+        except EntitlementsError as exc:
+            log.info("entitlements: %s", exc)
+
     async def hello(self) -> None:
+        self.refresh_entitlements()
         await self.send(
             {
                 "type": "hello",
@@ -175,6 +224,8 @@ class Agent:
                     res = {"status": "blocked", "error": v.reason}
                 elif v.ask and not await self.ask_user(jid, kind, v):
                     res = {"status": "blocked", "error": "the user did not approve this action"}
+                elif (blocked := self._entitlement_block(kind, p)):
+                    res = blocked
                 else:
                     snap = permissions.wire_snapshot()
                     miss = permissions.missing_for_kind(kind, p, snap)
@@ -200,11 +251,78 @@ class Agent:
         finally:
             self._track_objective(p, False)
         res = normalize_result(kind, res)
+        if res.get("status") == "ok":
+            self.blocker = ""
         res = self._attach_objective(p, res)
         res = self._attach_evidence(jid, res)
         self.store.put_idempotent(idem, res)
         log.info("job %s %s -> %s", jid, kind, res.get("status"))
         await self.send({"type": "result", "job_id": jid, **res})
+
+    def _entitlement_block(self, kind: str, params: dict) -> dict | None:
+        """Stop a computer-use job the plan does not allow. Exempt jobs never call the API."""
+        if kind in EXEMPT_KINDS:
+            return None
+        try:
+            snap = self.entitlements.me()
+        except EntitlementsError as exc:
+            return {
+                "status": "error",
+                "error": f"Couldn't check your plan ({exc}). Try again in a moment.",
+                "result": {"reason": "entitlements_unavailable", "upgrade_url": UPGRADE_URL},
+            }
+        self._snap = snap
+        if not snap.invited:
+            message = (
+                "This computer needs an invited Admeasy account. "
+                f"Enter a code in the Admeasy window, then sign in. {UPGRADE_URL}"
+            )
+            self.blocker = message
+            return {
+                "status": "blocked",
+                "error": message,
+                "result": {"reason": "invite_required", "upgrade_url": UPGRADE_URL},
+            }
+        if not snap.allows("local_machine"):
+            message = feature_message("local_machine", snap)
+            self.blocker = message
+            return {
+                "status": "blocked",
+                "error": message,
+                "result": {"reason": "plan_feature", "feature": "local_machine", "upgrade_url": UPGRADE_URL},
+            }
+        for feature in sorted(required_features(kind, params)):
+            if not snap.allows(feature):
+                message = feature_message(feature, snap)
+                self.blocker = message
+                return {
+                    "status": "blocked",
+                    "error": message,
+                    "result": {"reason": "plan_feature", "feature": feature, "upgrade_url": UPGRADE_URL},
+                }
+        try:
+            decision = self.entitlements.usage_check(COMPUTER_USE_ACTION)
+        except EntitlementsError as exc:
+            return {
+                "status": "error",
+                "error": f"Couldn't check this week's usage ({exc}). Try again in a moment.",
+                "result": {"reason": "entitlements_unavailable", "upgrade_url": UPGRADE_URL},
+            }
+        if decision.allowed:
+            return None
+        message = limit_message(decision, snap)
+        self.blocker = message
+        status = "rate_limited" if decision.is_limit else "blocked"
+        return {
+            "status": status,
+            "error": message,
+            "result": {
+                "reason": decision.code or "plan_limit",
+                "upgrade_url": decision.upgrade_url or UPGRADE_URL,
+                "remaining": decision.remaining,
+                "limit": decision.limit,
+            },
+        }
 
     @staticmethod
     def _attach_evidence(jid: str, res: dict) -> dict:
@@ -393,6 +511,11 @@ class Agent:
             if not (dev and tok):
                 await asyncio.sleep(2)
                 continue
+            allowed, why = self._tunnel_allowed()
+            if not allowed:
+                self._notify(False, why)
+                await asyncio.sleep(5)
+                continue
             try:
                 async with websockets.connect(
                     ws_url(self.s.backend, "/devices/tunnel"),
@@ -446,6 +569,18 @@ class Agent:
                 await self.send({"type": "permissions", "permissions": cur})
                 last = cur
             await asyncio.sleep(30)
+
+    def _tunnel_allowed(self) -> tuple[bool, str]:
+        try:
+            snap = self.entitlements.me()
+        except EntitlementsError as exc:
+            return False, f"couldn't check your invite ({exc})"
+        self._snap = snap
+        if not snap.invited:
+            return False, "invite required — enter a code, then sign in with Google"
+        if not snap.allows("local_machine"):
+            return False, feature_message("local_machine", snap)
+        return True, ""
 
     def _notify(self, online: bool, detail: str) -> None:
         if self.status_cb:

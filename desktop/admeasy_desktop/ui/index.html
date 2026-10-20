@@ -9,30 +9,83 @@ main{max-width:520px;margin:0 auto;padding:28px 20px}h1{font-size:20px;margin:0 
 .row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0}
 button{font:inherit;border:0;border-radius:10px;padding:9px 14px;background:var(--acc);color:#fff;cursor:pointer}
 button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}button.big{width:100%;padding:13px}
+button.linkish{background:transparent;color:var(--acc);padding:8px 0}
 .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:8px;background:var(--mut)}.on{background:var(--ok)}.off{background:var(--bad)}
-select{font:inherit;padding:7px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+select,input[type=text]{font:inherit;padding:7px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+input[type=text]{width:100%;padding:11px 12px;margin:8px 0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+a{color:var(--acc)}
+.err{color:var(--bad);min-height:1.2em}
 .log{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;max-height:180px;overflow:auto;white-space:pre-wrap;color:var(--mut);margin:8px 0 0}
 </style>
 <main id="app"></main>
 <script>
-const $=s=>document.querySelector(s), api=(p,b)=>fetch('/api/'+p,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{}).then(r=>r.json());
+const $=s=>document.querySelector(s);
+const api=(p,b)=>fetch('/api/'+p,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{}).then(r=>r.json());
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const dot=on=>`<span class="dot ${on?'on':'off'}"></span>`;
+function usageLine(u){
+  if(!u||u.remaining==null) return 'the server has not sent a number yet';
+  const period=u.period==='week'||u.period==='weekly'||!u.period?'this week':u.period;
+  if(u.limit==null) return `${u.remaining} left ${period}`;
+  return `${u.remaining} of ${u.limit} left ${period}`;
+}
+function inviteScreen(s){
+  const pending=s.pending_invite?`<p class="mut">Code <code>${esc(s.pending_invite)}</code> is valid. Sign in with Google so it is saved on the account.</p>
+    <button class="big" id="login">${s.logging_in?'Waiting for the browser…':'Continue with Google'}</button>`:'';
+  const who=s.signed_in&&s.email?`<p class="mut">Signed in as ${esc(s.email)}, but this account is not invited yet.</p>`:'';
+  $('#app').innerHTML=`<h1>Admeasy</h1>
+    <p class="mut">Admeasy is invite-only. Enter a code, then sign in with the same Google account you use on your phone.</p>
+    ${who}
+    <form class="card" id="invite">
+      <label>Invite code<input id="code" type="text" autocomplete="off" autocapitalize="characters" placeholder="#1111" value=""></label>
+      <button class="big" type="submit">Check code</button>
+    </form>
+    ${pending}
+    <button class="linkish" id="existing" type="button">I already have an account</button>
+    <p class="err">${esc(s.error||'')}</p>`;
+  $('#invite').onsubmit=async ev=>{
+    ev.preventDefault();
+    await api('invite',{code:$('#code').value});
+    draw();
+  };
+  const login=$('#login');
+  if(login) login.onclick=()=>{api('login',{});setTimeout(draw,400)};
+  $('#existing').onclick=()=>{api('login',{existing:true});setTimeout(draw,400)};
+}
+let inviteKey='';
 async function draw(){
   const s=await api('state');
   const logs=(await fetch('/api/logs').then(r=>r.json())).lines.join('\n');
-  if(!s.signed_in){ $('#app').innerHTML=`<h1>Admeasy</h1><p class="mut">Sign in with the same Google account you use on your phone. Your phone can then use this computer.</p>
-    <button class="big" id="login">${s.logging_in?'Waiting for browser…':'Continue with Google'}</button><p class="mut">${s.error||''}</p>`;
-    $('#login').onclick=()=>{api('login',{});setTimeout(draw,500)}; return; }
+  if(s.needs_invite){
+    const key=JSON.stringify({e:s.error,p:s.pending_invite,l:s.logging_in,si:s.signed_in,em:s.email});
+    if(key===inviteKey && document.getElementById('invite')) return;
+    inviteKey=key;
+    inviteScreen(s);
+    return;
+  }
+  inviteKey='';
+  const ent=s.entitlements||{};
+  const usage=ent.usage||{};
+  const ref=ent.referral;
+  const refBlock=ref&&ref.code?`<div class="row"><span class="mut">Your invite code</span><code>${esc(ref.code)}</code></div>
+     <div class="row"><span class="mut">Invites left</span><span>${ref.remaining==null?'—':esc(ref.remaining)}${ref.cap==null?'':` of ${esc(ref.cap)}`}</span></div>`:'';
   const perms=Object.entries(s.permissions).filter(([k,v])=>typeof v==='boolean').map(([k,v])=>
     `<div class="row"><span>${dot(v)}${k==='screen'?'Screen Recording':k==='full_disk'?'Full Disk Access (Messages, calls, notifications)':'Accessibility (mouse and keyboard)'}</span>${v?'<span class="mut">granted</span>':`<button class="ghost" onclick="api('open_settings',{which:'${k}'})">Grant</button>`}</div>`).join('');
-  const devs=(s.devices||[]).map(d=>`<div class="row"><span>${dot(d.online)}${d.name} <span class="mut">${d.platform}</span></span><span class="mut">${d.online?'online':'offline'}</span></div>`).join('')||'<p class="mut">No devices yet.</p>';
+  const devs=(s.devices||[]).map(d=>`<div class="row"><span>${dot(d.online)}${esc(d.name)} <span class="mut">${esc(d.platform)}</span></span><span class="mut">${d.online?'online':'offline'}</span></div>`).join('')||'<p class="mut">No devices yet.</p>';
   const obj=s.objective||{};
-  $('#app').innerHTML=`<h1>${s.email}</h1><p class="mut">This computer is ${s.online?'<b>connected</b>':'offline'} · ${s.detail||''}</p>
+  const upgrade=esc(ent.upgrade_url||'https://admeasy.ai');
+  $('#app').innerHTML=`<h1>${esc(s.email)}</h1><p class="mut">This computer is ${s.online?'<b>connected</b>':'offline'} · ${esc(s.detail||'')}</p>
+   <div class="card"><b>Plan</b>
+     <div class="row"><span class="mut">Plan</span><span>${esc(ent.plan_name||ent.plan||'—')}</span></div>
+     <div class="row"><span class="mut">Computer actions</span><span>${esc(usageLine(usage))}</span></div>
+     ${refBlock}
+     <p class="mut"><a href="${upgrade}" target="_blank" rel="noreferrer">Upgrade at admeasy.ai</a></p></div>
    <div class="card"><b>Current objective</b>
-     <div class="row"><span class="mut">id</span><span>${obj.objective_id||'—'}</span></div>
-     <div class="row"><span class="mut">step</span><span>${obj.step||'—'}</span></div>
-     <div class="row"><span class="mut">rows</span><span>${obj.rows_so_far||0}</span></div>
-     <div class="row"><span class="mut">blocker</span><span>${obj.blocker||'—'}</span></div></div>
+     <div class="row"><span class="mut">id</span><span>${esc(obj.objective_id||'—')}</span></div>
+     <div class="row"><span class="mut">step</span><span>${esc(obj.step||'—')}</span></div>
+     <div class="row"><span class="mut">rows</span><span>${esc(obj.rows_so_far||0)}</span></div>
+     <div class="row"><span class="mut">blocker</span><span>${esc(obj.blocker||'—')}</span></div></div>
    <div class="card"><b>Connected devices</b>${devs}</div>
    <div class="card"><b>Permissions</b>${perms}</div>
    <div class="card"><div class="row"><span>Ask me before risky actions</span><select id="mode">
@@ -42,6 +95,7 @@ async function draw(){
    <div class="row"><span>Start at login</span><input type="checkbox" id="login_start" ${s.settings.start_at_login?'checked':''}></div>
    <div class="row"><span>Pause Admeasy on this computer</span><input type="checkbox" id="paused" ${s.settings.paused?'checked':''}></div></div>
    <div class="card"><b>Live log</b><div class="log" id="log"></div></div>
+   <p class="err">${esc(s.error||'')}</p>
    <button class="ghost" id="out">Sign out and remove this computer</button>`;
   $('#log').textContent=logs||'(no log lines yet)';
   $('#mode').onchange=e=>api('settings',{approval_mode:e.target.value});
