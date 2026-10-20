@@ -27,13 +27,14 @@ Optional: `playwright install chromium` if Google Chrome is not installed (brows
 ```bash
 export ADMEASY_BACKEND=https://admeasy-backend.6h5y8j39qxdcg.ap-south-1.cs.amazonlightsail.com
 python -m admeasy_desktop doctor
-python -m admeasy_desktop login
+python -m admeasy_desktop login   # invite code first, unless this account is already invited
 python -m admeasy_desktop run
 ```
 
 Backend requirements (main repo):
 
 - `DEVICES_ENABLED=true` on the Lightsail service
+- Entitlements routes (`/entitlements/me`, `/entitlements/invites/validate`, `/entitlements/usage/check`) and `invite` on `/auth/google/start`
 - Merged `docs/backend-changes.diff` (device tools, `/devices/tunnel`, desktop loopback on `/auth/google/start`)
 
 ## Commands

@@ -41,6 +41,10 @@ include = ["admeasy_desktop*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+  "live_entitlements: talks to the deployed Admeasy backend",
+  "no_entitlement_stub: do not replace EntitlementsClient with the allow-all test double",
+]
 
 [tool.setuptools.package-data]
 admeasy_desktop = ["chromium_browsers.json", "ui/*.html"]

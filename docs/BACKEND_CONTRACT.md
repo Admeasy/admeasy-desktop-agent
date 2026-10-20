@@ -17,10 +17,17 @@ The LLM picks `device_*` tools (no intent routing). See [COMPUTER_USE.md](COMPUT
 
 ## Sign-in
 
-1. Bind loopback port `P` ∈ **1024–65535** and random `nonce` (≤ **64** chars).
-2. `GET {PUBLIC_BASE_URL}/auth/google/start?desktop_port=P&nonce={nonce}`
-3. Redirect: `http://127.0.0.1:P/callback?access_token=…&refresh_token=…&email=…&nonce=…`
-4. `POST /auth/refresh` body `{"refresh_token": "…"}`
+The desktop agent is invite-only, using the same browser flow as [admeasy.ai/invite](https://admeasy.ai/invite) (not phone pairing).
+
+1. If `GET /entitlements/me` says this account is already invited, skip the code.
+2. Otherwise `POST /entitlements/invites/validate` body `{"code": "…"}` (`#1111` and `1111` are the founder code). A valid response includes `normalized_code`.
+3. Bind loopback port `P` ∈ **1024–65535** and random `nonce` (≤ **64** chars).
+4. `GET {PUBLIC_BASE_URL}/auth/google/start?desktop_port=P&nonce={nonce}&invite={normalized_code}` so the account is stored with `referred_by`. Omit `invite` only for an account that is already invited.
+5. Redirect: `http://127.0.0.1:P/callback?access_token=…&refresh_token=…&email=…&nonce=…`
+6. `POST /auth/refresh` body `{"refresh_token": "…"}`
+7. `GET /entitlements/me` must report the account as invited before the computer is enrolled. Plan, weekly `cursor` usage, and (on Starter/Pro) `referral.code` / `remaining` / `cap` come from this payload.
+
+Before each computer-use job the desktop calls `POST /entitlements/usage/check` with `{"action": "cursor"}` (the weekly pool that counts those actions). `status` and `signin` jobs do not. A denial is returned to the phone as `rate_limited` or `blocked` and the window links to https://admeasy.ai. Claude and the vision model are omitted unless `/entitlements/me` allows them.
 
 ## Register device
 

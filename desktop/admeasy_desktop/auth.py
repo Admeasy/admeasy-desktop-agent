@@ -82,7 +82,7 @@ def clear_device_secrets() -> None:
 
 
 def clear_secrets() -> None:
-    for n in ("access_token", "refresh_token", "email", "device_id", "device_token"):
+    for n in ("access_token", "refresh_token", "email", "device_id", "device_token", "pending_invite"):
         kr = _kr()
         try:
             if kr:
@@ -109,8 +109,12 @@ def _sign_in_nonce() -> str:
     return secrets.token_urlsafe(32)[:64]
 
 
-def login_via_browser(backend: str, timeout_s: int = 300, open_browser=webbrowser.open) -> dict:
-    """Blocks until the browser hands the tokens back. Returns {access_token, refresh_token, email}."""
+def login_via_browser(backend: str, timeout_s: int = 300, open_browser=webbrowser.open, invite: str | None = None) -> dict:
+    """Blocks until the browser hands the tokens back. Returns {access_token, refresh_token, email}.
+
+    `invite` is the normalized code from POST /entitlements/invites/validate. The backend
+    stores it on the OAuth state and sets referred_by when the account is created.
+    """
     port, nonce = _free_port(), _sign_in_nonce()
     got: dict = {}
     done = threading.Event()
@@ -136,8 +140,10 @@ def login_via_browser(backend: str, timeout_s: int = 300, open_browser=webbrowse
     srv = http.server.HTTPServer(("127.0.0.1", port), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        open_browser(f"{backend.rstrip('/')}/auth/google/start?" + urllib.parse.urlencode(
-            {"desktop_port": port, "nonce": nonce}))
+        query = {"desktop_port": port, "nonce": nonce}
+        if invite and str(invite).strip():
+            query["invite"] = str(invite).strip()
+        open_browser(f"{backend.rstrip('/')}/auth/google/start?" + urllib.parse.urlencode(query))
         if not done.wait(timeout_s) or not got.get("access_token"):
             raise TimeoutError("sign-in did not finish")
     finally:

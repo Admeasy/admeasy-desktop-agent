@@ -24,10 +24,6 @@ from admeasy_desktop.config import CONFIG_PATH, LOG_DIR, Settings
 from admeasy_desktop.runtime import app_executable, frozen
 
 
-def _enrol_caps(agent) -> dict:
-    return agent.capabilities()
-
-
 def cmd_run(background: bool) -> None:
     from admeasy_desktop.agent import Agent
     from admeasy_desktop.log_buffer import configure_logging
@@ -186,6 +182,29 @@ def cmd_doctor(click_test: bool = False) -> int:
         line("backend reachable", False, f"{s.backend}: {e}")
     st = auth.state()
     line("signed in", st["signed_in"], st.get("email") or "run: python -m admeasy_desktop login")
+    from admeasy_desktop.entitlements import EntitlementsClient, EntitlementsError
+
+    gate = EntitlementsClient(s.backend)
+    if st["signed_in"]:
+        try:
+            snap = gate.me(fresh=True)
+            usage = snap.usage or {}
+            left = "n/a" if usage.get("remaining") is None else str(usage.get("remaining"))
+            cap = usage.get("limit")
+            usage_txt = left if cap is None else f"{left} of {cap}"
+            line("invited", snap.invited, snap.plan_name or snap.plan or "no plan on this account")
+            line("plan", bool(snap.plan or snap.plan_name), f"{snap.plan_name} · computer actions left {usage_txt}")
+            if snap.referral and snap.referral.get("code"):
+                ref = snap.referral
+                line(
+                    "referral code",
+                    True,
+                    f"{ref.get('code')} · {ref.get('remaining')} of {ref.get('cap')} invites left",
+                )
+        except EntitlementsError as exc:
+            line("invited", False, str(exc))
+    else:
+        line("invited", False, "enter an invite code, then sign in")
     line("computer enrolled", bool(st["device_id"]))
     tok = auth.load_secret("access_token")
     if auth.refresh(s.backend):
@@ -264,16 +283,59 @@ def main() -> None:
         sys.exit(cmd_doctor(click_test=getattr(a, "click_test", False)))
     elif a.cmd == "login":
         from admeasy_desktop.agent import Agent
-        t = auth.login_via_browser(s.backend)
+        from admeasy_desktop.entitlements import EntitlementsClient, EntitlementsError, InviteError
+
+        client = EntitlementsClient(s.backend)
+        if auth.state()["signed_in"]:
+            try:
+                already = client.me(fresh=True)
+            except EntitlementsError:
+                already = None
+            if already and already.invited:
+                agent = Agent(s)
+                agent._snap = already
+                try:
+                    auth.enrol(s, agent.capabilities(), platform.platform())
+                except (DevicesDisabledError, DevicesNotDeployedError) as e:
+                    print(str(e), file=sys.stderr)
+                    sys.exit(1)
+                permissions.check(prompt=True)
+                print("signed in as", auth.load_secret("email"), f"({already.plan_name})")
+                return
+        code = os.environ.get("ADMEASY_INVITE", "").strip()
+        if not code and sys.stdin.isatty():
+            code = input("Invite code (required unless this Google account is already invited): ").strip()
+        if not code:
+            print("An invite code is required. Set ADMEASY_INVITE or run login in a terminal.", file=sys.stderr)
+            sys.exit(1)
+        try:
+            code = client.validate_invite(code).normalized_code
+        except InviteError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
+        except EntitlementsError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
+        t = auth.login_via_browser(s.backend, invite=code)
         for k in ("access_token", "refresh_token", "email"):
             auth.save_secret(k, t[k])
         try:
-            auth.enrol(s, _enrol_caps(Agent(s)), platform.platform())
+            snap = client.me(fresh=True)
+        except EntitlementsError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
+        if not snap.invited:
+            print("This account is not invited. Run login again with a valid code.", file=sys.stderr)
+            sys.exit(1)
+        agent = Agent(s)
+        agent._snap = snap
+        try:
+            auth.enrol(s, agent.capabilities(), platform.platform())
         except (DevicesDisabledError, DevicesNotDeployedError) as e:
             print(str(e), file=sys.stderr)
             sys.exit(1)
         permissions.check(prompt=True)
-        print("signed in as", t["email"])
+        print("signed in as", t["email"], f"({snap.plan_name})")
     elif a.cmd == "devices":
         from admeasy_desktop.ui.server import UiState
         for d in UiState(s).devices():
