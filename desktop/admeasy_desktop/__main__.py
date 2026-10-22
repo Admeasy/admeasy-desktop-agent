@@ -263,6 +263,14 @@ def cmd_doctor(click_test: bool = False) -> int:
     elif s.show_agent_cursor:
         kind = "AppKit" if sys.platform == "darwin" else "tkinter"
         line(f"agent cursor ({kind})", True, "pink overlay available")
+    from admeasy_desktop import agent_edge_overlay
+
+    if s.show_agent_edge_border and not agent_edge_overlay.is_available():
+        hint = "pip install pyobjc-framework-Cocoa" if sys.platform == "darwin" else "install python-tk"
+        line("agent edge border", False, f"{hint} or set show_agent_edge_border=false")
+    elif s.show_agent_edge_border:
+        kind = "AppKit" if sys.platform == "darwin" else ("Win32" if sys.platform == "win32" else "tkinter")
+        line(f"agent edge border ({kind})", True, "screen-edge frame available")
     return 0 if ok else 1
 
 

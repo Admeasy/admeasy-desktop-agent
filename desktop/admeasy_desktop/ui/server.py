@@ -146,6 +146,9 @@ class UiState:
                 "rows_so_far": self.agent.rows_so_far,
                 "blocker": self.agent.blocker,
             }
+            agent_ui = self.agent.session.public()
+        else:
+            agent_ui = {"agent_active": False, "agent_pulse": False}
         snap = self._load_entitlements() if s["signed_in"] else None
         invited = bool(snap and snap.invited)
         pending = auth.load_secret("pending_invite") or ""
@@ -163,6 +166,8 @@ class UiState:
             "needs_invite": not (s["signed_in"] and invited),
             "pending_invite": pending,
             "entitlements": snap.public() if snap else None,
+            "agent_active": agent_ui.get("agent_active", False),
+            "agent_pulse": agent_ui.get("agent_pulse", False),
         }
 
 
@@ -201,7 +206,14 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
                 permissions.open_settings(body.get("which", ""))
             elif name == "settings":
                 for k, v in body.items():
-                    if k in ("approval_mode", "keep_awake", "start_at_login", "paused", "show_agent_cursor") and hasattr(
+                    if k in (
+                        "approval_mode",
+                        "keep_awake",
+                        "start_at_login",
+                        "paused",
+                        "show_agent_cursor",
+                        "show_agent_edge_border",
+                    ) and hasattr(
                         state.settings, k
                     ):
                         setattr(state.settings, k, v)

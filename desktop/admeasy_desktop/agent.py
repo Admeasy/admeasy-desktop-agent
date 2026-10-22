@@ -38,7 +38,8 @@ from .results import normalize as normalize_result
 from .signin_handoff import run as signin_run
 from .surface_status import collect as surface_collect
 from .system_hooks import keep_awake
-from . import cursor_overlay
+from . import agent_edge_overlay, cursor_overlay
+from .agent_session import AgentSession
 
 log = logging.getLogger("admeasy-desktop")
 APPROVAL_WAIT_S = 120
@@ -64,6 +65,8 @@ class Agent:
         self._objective_jobs: int = 0
         self.entitlements = EntitlementsClient(settings.backend)
         self._snap = None
+        self.session = AgentSession()
+        self._edge_task: asyncio.Task | None = None
 
     async def send(self, msg: dict) -> None:
         async with self.send_lock:
@@ -82,6 +85,7 @@ class Agent:
             "playwright_requires": "params.force_playwright or ADMEASY_PLAYWRIGHT=1",
             "native_apps": True,
             "agent_cursor_overlay": self.s.show_agent_cursor and cursor_overlay.is_available(),
+            "agent_edge_border": self.s.show_agent_edge_border and agent_edge_overlay.is_available(),
             "objectives": {"echo_objective_id": True},
             "set_of_mark": True,
             "ax_tree": sys.platform in ("darwin", "win32"),
@@ -158,11 +162,15 @@ class Agent:
             msg["objective_id"] = oid
         await self.send(msg)
         self.objective_step = text[:120]
+        self.session.heartbeat()
+        self._sync_edge_border()
 
     async def ask_user(self, jid: str, kind: str, verdict) -> bool:
         aid = str(uuid.uuid4())
         fut = asyncio.get_running_loop().create_future()
         self.approvals[aid] = fut
+        self.session.set_approval_wait(True)
+        self._sync_edge_border()
         await self.send(
             {
                 "type": "approval_request",
@@ -179,6 +187,8 @@ class Agent:
             return False
         finally:
             self.approvals.pop(aid, None)
+            self.session.set_approval_wait(False)
+            self._sync_edge_border()
 
     def _track_objective(self, params: dict, on: bool) -> None:
         oid = params.get("objective_id")
@@ -193,6 +203,20 @@ class Agent:
                 keep_awake(False)
                 if not oid:
                     self.objective_id = None
+        self.session.track_objective(on)
+
+    def _sync_edge_border(self) -> None:
+        if not self.s.show_agent_edge_border or not agent_edge_overlay.is_available():
+            agent_edge_overlay.hide()
+            return
+        agent_edge_overlay.set_enabled(True)
+        agent_edge_overlay.ensure_started()
+        agent_edge_overlay.set_active(self.session.active, pulse=self.session.pulse)
+
+    async def _edge_border_loop(self) -> None:
+        while True:
+            self._sync_edge_border()
+            await asyncio.sleep(0.25)
 
     async def run_job(self, job: dict) -> None:
         jid, kind, p = job["job_id"], job["kind"], job.get("params") or {}
@@ -215,6 +239,8 @@ class Agent:
 
     async def _run_job(self, job: dict, jid: str, kind: str, p: dict, idem: str) -> None:
         self._track_objective(p, True)
+        self.session.job_started(kind)
+        self._sync_edge_border()
         try:
             if self.s.paused:
                 res = {"status": "blocked", "error": "the user paused Admeasy on this computer"}
@@ -249,7 +275,9 @@ class Agent:
             log.exception("job %s", jid)
             res = {"status": "error", "error": f"{type(e).__name__}: {e}"}
         finally:
+            self.session.job_finished(kind)
             self._track_objective(p, False)
+            self._sync_edge_border()
         res = normalize_result(kind, res)
         if res.get("status") == "ok":
             self.blocker = ""
@@ -473,6 +501,7 @@ class Agent:
     async def worker(self) -> None:
         while True:
             job = await self.queue.get()
+            self.session.job_dequeued()
             try:
                 self.task = asyncio.create_task(self.run_job(job))
                 await self.task
@@ -486,6 +515,8 @@ class Agent:
         await self.send({"type": "result", "job_id": job_id, "status": "cancelled", "error": "stopped by the user"})
 
     def cancel_all(self) -> None:
+        self.session.reset()
+        self._sync_edge_border()
         queued = []
         while not self.queue.empty():
             queued.append(self.queue.get_nowait())
@@ -504,6 +535,10 @@ class Agent:
         if self.s.show_agent_cursor and cursor_overlay.is_available():
             cursor_overlay.set_enabled(True)
             cursor_overlay.ensure_started()
+        if self.s.show_agent_edge_border and agent_edge_overlay.is_available():
+            agent_edge_overlay.set_enabled(True)
+            agent_edge_overlay.ensure_started()
+        self._edge_task = asyncio.create_task(self._edge_border_loop())
         asyncio.create_task(self.worker())
         backoff = 1
         while True:
@@ -532,6 +567,8 @@ class Agent:
                             m = json.loads(raw)
                             t = m.get("type")
                             if t == "task":
+                                self.session.job_enqueued()
+                                self._sync_edge_border()
                                 await self.queue.put(m)
                             elif t == "approval_result":
                                 f = self.approvals.get(m.get("approval_id"))

@@ -45,6 +45,7 @@ class Settings:
     # playwright_profile: isolated ~/.admeasy/chrome-profile (automation only).
     browser_automation: str = "default_first"
     show_agent_cursor: bool = True
+    show_agent_edge_border: bool = True
     # Playwright with the real default-browser profile (e.g. Comet) so DOM automation keeps your logins.
     # Empty = auto from chromium_browsers.json; set both to override. Falls back to the isolated profile if the
     # browser is already running (Chromium locks its profile) or the paths are missing.
