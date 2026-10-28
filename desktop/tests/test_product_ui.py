@@ -25,7 +25,6 @@ from admeasy_desktop.ui.server import UiState, serve
 def _home(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "HOME", tmp_path)
     monkeypatch.setattr(config, "CONFIG_PATH", tmp_path / "config.json")
-    monkeypatch.setattr(auth, "HOME", tmp_path)
     monkeypatch.setattr(auth, "_kr", lambda: None)
 
 

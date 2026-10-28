@@ -215,7 +215,13 @@ function connections() {
       <label>never allow (cannot be overridden)<textarea id="block" rows="3">${esc((state.settings.command_blocklist || []).join("\n"))}</textarea></label>
       <button class="btn btn-dark" id="save-cmds">save lists</button>
     </div>
-    <div class="card"><b>connect a computer</b>
+    <div class="card"><b>install on another computer</b>
+      <p class="muted">share the download link — do not ask friends to paste terminal commands.</p>
+      <a class="btn btn-primary btn-block" href="${esc(install.releases_page || "https://github.com/Admeasy/admeasy-desktop-agent/releases")}" target="_blank" rel="noreferrer">download admeasy</a>
+      ${install.download_macos ? `<a class="btn btn-light btn-block" href="${esc(install.download_macos)}" target="_blank" rel="noreferrer">macos .dmg (this version)</a>` : ""}
+      <p class="muted small">first open on mac: if blocked, go to system settings → privacy &amp; security → open anyway.</p>
+    </div>
+    <div class="card"><b>advanced: terminal install</b>
       <p class="muted">${esc(install.note || "")}</p>
       ${install.code ? `<div class="row"><span class="pill pill-wa keep-case">pair ${esc(install.code)}</span>
         <button class="btn btn-light" type="button" id="refresh-pair">new code</button></div>` : ""}

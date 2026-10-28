@@ -9,6 +9,9 @@ import platform
 import shutil
 import sys
 import threading
+import time
+import urllib.error
+import urllib.request
 
 import httpx
 
@@ -31,6 +34,8 @@ def cmd_run(background: bool) -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     configure_logging(str(LOG_DIR / "agent.log"))
     s = Settings.load()
+    if not CONFIG_PATH.exists():
+        s.save()
     ui = UiState(s)
     agent = Agent(s)
     ui.agent = agent
@@ -45,6 +50,13 @@ def cmd_run(background: bool) -> None:
     threading.Thread(target=lambda: asyncio.run(agent.tunnel()), daemon=True).start()
     _srv, port = serve(ui)
     url = f"http://127.0.0.1:{port}/"
+    for _ in range(80):
+        try:
+            with urllib.request.urlopen(url, timeout=0.25) as res:
+                if res.status == 200:
+                    break
+        except (urllib.error.URLError, TimeoutError, OSError):
+            time.sleep(0.05)
     print(f"Admeasy is open at {url}", flush=True)
     from admeasy_desktop.reminders import Scheduler
 
@@ -302,12 +314,7 @@ def _cmd_pair(settings, code: str) -> int:
         print(r.text[:300], file=sys.stderr)
         return 1
     payload = r.json()
-    for key in ("access_token", "refresh_token", "email"):
-        if payload.get(key):
-            auth.save_secret(key, payload[key])
-    if payload.get("device_id") and payload.get("device_token"):
-        auth.save_secret("device_id", payload["device_id"])
-        auth.save_secret("device_token", payload["device_token"])
+    auth.save_secrets({k: str(payload[k]) for k in ("access_token", "refresh_token", "email", "device_id", "device_token") if payload.get(k)})
     print("paired", payload.get("email") or settings.device_name)
     return 0
 

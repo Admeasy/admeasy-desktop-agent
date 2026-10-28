@@ -21,8 +21,9 @@ from ..config import Settings
 from ..entitlements import EntitlementsAuthError, EntitlementsClient, EntitlementsError, InviteError
 from ..runtime import app_executable
 from ..log_buffer import tail
+from .paths import ui_dir
 
-INDEX = Path(__file__).with_name("index.html")
+INDEX = ui_dir() / "index.html"
 
 
 class UiState:
@@ -84,8 +85,7 @@ class UiState:
                     self.error = "Enter an invite code first."
                     return
                 tok = auth.login_via_browser(self.settings.backend, invite=invite)
-                for k in ("access_token", "refresh_token", "email"):
-                    auth.save_secret(k, tok[k])
+                auth.save_secrets({k: tok[k] for k in ("access_token", "refresh_token", "email")})
                 self._ent_cache = None
                 snap = self._load_entitlements(fresh=True)
                 if snap is None or not snap.invited:
@@ -241,7 +241,10 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
             }
             if path in static:
                 name, ctype = static[path]
-                return self._bytes((INDEX.parent / name).read_bytes(), ctype)
+                path = ui_dir() / name
+                if not path.is_file():
+                    return self._json({"error": f"missing {name}"}, 404)
+                return self._bytes(path.read_bytes(), ctype)
             html = INDEX.read_text(encoding="utf-8").replace("__TOKEN__", state.token)
             return self._bytes(html.encode(), "text/html; charset=utf-8")
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from .. import auth, permissions
+from .. import VERSION, auth, permissions
 from ..backend_client import BackendClient, BackendError
 from ..config import platform_name
 from ..folders import grant, pick_folder, revoke
@@ -39,7 +39,13 @@ def install_snippet(state) -> dict:
         if code else
         "Sign in on this computer first to mint a pairing code, or run the one-liner and complete Google sign-in."
     )
+    rel = VERSION
+    dmg = f"https://github.com/Admeasy/admeasy-desktop-agent/releases/download/v{rel}/Admeasy-{rel}-macos-unsigned.dmg"
+    exe = f"https://github.com/Admeasy/admeasy-desktop-agent/releases/download/v{rel}/Admeasy-{rel}-windows-unsigned.exe"
     result = {
+        "download_macos": dmg,
+        "download_windows": exe,
+        "releases_page": "https://github.com/Admeasy/admeasy-desktop-agent/releases/latest",
         "macos": f"curl -fsSL {GITHUB_SH} | bash -s --{pair} --backend {backend}",
         "windows": (
             f"$env:ADMEASY_BACKEND='{backend}'; "
@@ -47,7 +53,11 @@ def install_snippet(state) -> dict:
             + f"irm {GITHUB_PS1} | iex"
         ),
         "code": code,
-        "note": note,
+        "note": (
+            "Send them the download link above (normal users never run curl)."
+            + (" Pair code is single-use for another computer on your account." if code
+               else " Sign in on this Mac first to mint a pair code.")
+        ),
         "platform": platform_name(),
     }
     state._install_cache = (time.time(), result)

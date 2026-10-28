@@ -7,7 +7,7 @@ import urllib.request
 import httpx
 import pytest
 
-from admeasy_desktop import auth
+from admeasy_desktop import auth, config
 from admeasy_desktop.agent import Agent
 from admeasy_desktop.config import Settings
 from admeasy_desktop.entitlements import (
@@ -253,7 +253,8 @@ def test_google_start_carries_the_normalized_invite(monkeypatch):
 
 def test_window_asks_for_a_code_then_shows_plan(monkeypatch, tmp_path):
     monkeypatch.setenv("ADMEASY_HOME", str(tmp_path))
-    monkeypatch.setattr(auth, "HOME", tmp_path)
+    monkeypatch.setattr(config, "HOME", tmp_path)
+    monkeypatch.setattr(config, "CONFIG_PATH", tmp_path / "config.json")
     monkeypatch.setattr(auth, "_kr", lambda: None)
     state = UiState(Settings(backend="http://127.0.0.1:1"))
 
