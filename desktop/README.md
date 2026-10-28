@@ -37,7 +37,7 @@ powershell -File .\desktop\packaging\install.ps1
 
 The script installs into `~/.admeasy/venv`, registers a per-user background service, and registers the `admeasy://` link handler. Then open the window and sign in with the same Google account as your phone.
 
-The Connections screen shows this command again. If the backend has issued a pairing code, the command includes it. Today the live API does not, so the script falls back to Google sign-in (exit code 2 from `pair`).
+The Connections screen shows this command again with a fresh **`POST /devices/pair-codes`** code when you are signed in.
 
 ## Run from a checkout
 
@@ -59,7 +59,9 @@ $env:ADMEASY_BACKEND = "https://admeasy-backend.6h5y8j39qxdcg.ap-south-1.cs.amaz
 python -m admeasy_desktop run
 ```
 
-The process prints `Admeasy is open at http://127.0.0.1:<port>/`. Sign in, grant the four permission rows, then the chat composer unlocks. `⋯` opens Profile, Connections, Plan, and Notifications.
+The process prints `Admeasy is open at http://127.0.0.1:<port>/`. Sign in, grant the four permission rows, then the chat composer unlocks. `⋯` opens Profile, Connections, Employees, Automations, Connectors, Plan, Activity, and Notifications.
+
+API reference (derived from live OpenAPI): [`../docs/DESKTOP_API.md`](../docs/DESKTOP_API.md).
 
 On a new config the helper will not click, type, or run a shell until that screen is finished. A computer that already had `~/.admeasy/config.json` keeps serving the phone.
 
@@ -67,11 +69,12 @@ Optional: `playwright install chromium` if Google Chrome is not installed.
 
 ## What to try
 
-- **Chat.** After sign-in, history loads from `GET /conversations`. Sending uses `WSS /ws/session`. The live Lightsail image we probed does not mount that socket yet; the window says so, and the phone tunnel still runs. See the PR for the backend change.
-- **Permissions.** The first screen shows screen, accessibility, keyboard/mouse, and clipboard. Grant opens System Settings on macOS.
-- **Folders.** Connections → approve a folder. `/` and your home directory are rejected. Revoke removes it. File jobs cannot leave the list once you have approved one.
-- **Shell.** A shell note in the chat has "open in terminal". That navigates to `admeasy://run?job=<id>` (a job id only). The helper opens Terminal, iTerm (`ADMEASY_TERMINAL=iterm`), Windows Terminal, or `x-terminal-emulator`.
-- **Reminders.** Notifications → pick a time. This computer toasts when it is due. WhatsApp delivery waits on `POST /reminders` in the backend.
+- **Chat.** History from `GET /conversations`. Send with `WSS /ws/session?token=<JWT>&client=desktop` (fragmented bubbles on `done` / `revision`).
+- **Pairing.** Connections mints a code via `POST /devices/pair-codes`; install scripts redeem with `POST /devices/pair/redeem`.
+- **Reminders.** `POST/GET/DELETE /reminders` plus tunnel `{type:"reminder"}` toasts. Web Push via `GET /push/vapid-public-key` and `POST /push/web` (client `desktop`).
+- **Employees & automations.** Same REST as the phone (`/employees`, `/me/triggers`, `POST /triggers/{id}`).
+- **Permissions & folders.** Onboarding grants screen/accessibility/input/clipboard; Connections approves folder paths (not `/` or home).
+- **Shell links.** Chat notes can open `admeasy://run?job=<id>` in your terminal app.
 - **Phone.** Leave `python -m admeasy_desktop run` (or the service) running. The phone uses the same device tunnel as before.
 
 ## Tests
@@ -86,7 +89,7 @@ The script above is the path that avoids Gatekeeper and SmartScreen. If you stil
 
 ## Backend
 
-The Lightsail service needs `DEVICES_ENABLED=true`, the entitlements routes, and the device tunnel from `docs/backend-changes.diff`. Chat history is `GET /conversations`. Sending a turn needs `WSS /ws/session`, which the live image does not mount yet.
+Lightsail (main at `caeef71`) exposes the routes in [`../docs/DESKTOP_API.md`](../docs/DESKTOP_API.md). Set `ADMEASY_BACKEND` if you are not using the default hostname.
 
 ## Commands
 

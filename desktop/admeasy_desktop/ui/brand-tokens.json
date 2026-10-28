@@ -1,0 +1,54 @@
+{
+  "source": "admeasy-ai-assistant brand-tokens.json (synced from live web :root at admeasy.ai, Oct 2026)",
+  "colors": {
+    "bg": "#f6f3ee",
+    "ink": "#221f26",
+    "muted": "#6d6573",
+    "pink": "#e278a0",
+    "pinkDeep": "#c45384",
+    "lilac": "#efe6fb",
+    "lavender": "#cbb6f0",
+    "sky": "#d9cff6",
+    "card": "#fffcf8",
+    "line": "rgba(34, 31, 38, 0.1)",
+    "wa": "#128c7e",
+    "them": "#e7f3ff",
+    "me": "#ffe8d6",
+    "danger": "#b4233a",
+    "dangerHot": "#c0392b",
+    "dangerBg": "#fff5f4",
+    "dangerLine": "#e8b4b0",
+    "ok": "#6f9468"
+  },
+  "fonts": {
+    "display": "Gaegu, \"Comic Sans MS\", cursive",
+    "body": "Nunito, \"Segoe UI\", sans-serif"
+  },
+  "fontSize": {
+    "base": "17px",
+    "small": "13px",
+    "brand": "32px",
+    "screenTitle": "clamp(2rem, 6vw, 2.6rem)"
+  },
+  "radii": {
+    "card": "28px",
+    "bubble": "18px",
+    "pill": "999px",
+    "input": "14px"
+  },
+  "spacing": {
+    "xs": "8px",
+    "sm": "12px",
+    "md": "18px",
+    "lg": "28px",
+    "xl": "56px"
+  },
+  "shadow": {
+    "card": "0 18px 50px rgba(80, 50, 90, 0.08)"
+  },
+  "breakpoints": {
+    "md": "720px",
+    "lg": "900px",
+    "xl": "980px"
+  }
+}
