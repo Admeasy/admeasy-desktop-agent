@@ -43,6 +43,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
   "live_entitlements: talks to the deployed Admeasy backend",
+  "live_backend: OpenAPI / health checks against Lightsail",
   "no_entitlement_stub: do not replace EntitlementsClient with the allow-all test double",
 ]
 

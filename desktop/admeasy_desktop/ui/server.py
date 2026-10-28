@@ -12,8 +12,10 @@ from pathlib import Path
 import httpx
 
 from .. import auth, permissions, system_hooks
+from ..backend_client import BackendError
 from ..chat_bridge import ChatBridge
 from .actions import asset_bytes, handle_post, live_payload, public_state
+from .backend_routes import backend_error_response, handle_backend_delete, handle_backend_get, handle_backend_post
 from ..api import DEVICES_DISABLED, DEVICES_NOT_DEPLOYED, DevicesDisabledError, DevicesNotDeployedError, raise_for_devices
 from ..config import Settings
 from ..entitlements import EntitlementsAuthError, EntitlementsClient, EntitlementsError, InviteError
@@ -216,6 +218,16 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
                 return self._json(state.chat.history())
             if path == "/api/live":
                 return self._json(live_payload(state))
+            if path.startswith("/api/backend/"):
+                name = path.removeprefix("/api/backend/").strip("/")
+                try:
+                    payload = handle_backend_get(state, name)
+                except BackendError as exc:
+                    body, code = backend_error_response(exc)
+                    return self._json(body, code)
+                if payload is None:
+                    return self._json({"error": "unknown route"}, 404)
+                return self._json(payload)
             if path in ("/install.sh", "/install.ps1"):
                 blob = asset_bytes(path.lstrip("/"))
                 if blob is None:
@@ -233,11 +245,40 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
             html = INDEX.read_text(encoding="utf-8").replace("__TOKEN__", state.token)
             return self._bytes(html.encode(), "text/html; charset=utf-8")
 
+        def _backend_write(self, route: str, body: dict | None = None):
+            try:
+                payload = handle_backend_post(state, route, body or {})
+            except BackendError as exc:
+                b, code = backend_error_response(exc)
+                return self._json(b, code)
+            if payload is None:
+                return self._json({"error": "unknown route"}, 404)
+            return self._json(payload)
+
+        def do_DELETE(self):
+            if not self._csrf():
+                return self._json({"error": "blocked"}, 403)
+            name = self.path.removeprefix("/api/")
+            if not name.startswith("backend/"):
+                return self._json({"error": "not found"}, 404)
+            route = name.removeprefix("backend/").strip("/")
+            try:
+                payload = handle_backend_delete(state, route)
+            except BackendError as exc:
+                b, code = backend_error_response(exc)
+                return self._json(b, code)
+            if payload is None:
+                return self._json({"error": "unknown route"}, 404)
+            return self._json(payload)
+
         def do_POST(self):
             if not self._csrf():
                 return self._json({"error": "blocked"}, 403)
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
             name = self.path.removeprefix("/api/")
+            if name.startswith("backend/"):
+                route = name.removeprefix("backend/").strip("/")
+                return self._backend_write(route, body)
             try:
                 extra = handle_post(state, name, body)
             except ValueError as exc:

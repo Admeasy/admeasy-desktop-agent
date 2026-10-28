@@ -1,9 +1,7 @@
 """Desktop chat against the same Lightsail backend as WhatsApp and the phone.
 
 History: GET /conversations and GET /conversations/{id}/messages with the user JWT.
-Send: WebSocket /ws/session?token=&conversation_id=  (defined in this repo's backend
-copy). The live image probed on 28 Oct 2026 returned 404 for that path; the window
-shows that error and still loads history when the REST calls succeed.
+Send: WSS /ws/session?token=<JWT>&client=desktop (& conversation_id when resuming).
 """
 from __future__ import annotations
 
@@ -157,7 +155,7 @@ class ChatBridge:
             return
         try:
             if self._ws is None:
-                query = {"token": token}
+                query = {"token": token, "client": "desktop"}
                 if self.conversation_id:
                     query["conversation_id"] = self.conversation_id
                 url = ws_url(self.settings.backend, "/ws/session?" + urllib.parse.urlencode(query))
@@ -169,7 +167,7 @@ class ChatBridge:
         except Exception as exc:
             self.connected = False
             self._ws = None
-            self.error = f"chat socket unavailable ({exc}). History still loads. The live backend needs /ws/session."
+            self.error = f"chat socket unavailable ({exc})."
             self._push({"type": "error", "text": self.error})
             log.info("chat send failed: %s", exc)
 

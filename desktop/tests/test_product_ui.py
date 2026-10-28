@@ -111,6 +111,9 @@ def test_window_serves_theme_installer_and_folder_gate(tmp_path, monkeypatch):
         assert "__TOKEN__" not in page
         css = urllib.request.urlopen(base + "/theme.css").read().decode()
         assert "--pink: #e278a0" in css
+        assert "--bp-md: 720px" in css
+        tokens = json.load(open(Path(__file__).resolve().parents[1] / "admeasy_desktop/ui/brand-tokens.json"))
+        assert tokens["colors"]["bg"] == "#f6f3ee"
         script = urllib.request.urlopen(base + "/install.sh").read().decode()
         assert "bash -s --" in script or "--pair" in script
         snap = json.load(urllib.request.urlopen(base + "/api/state"))

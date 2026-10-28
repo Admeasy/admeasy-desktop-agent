@@ -1,8 +1,19 @@
-/* Desktop window tokens, taken from the web app in admeasy-ai-assistant
-   (web/src/styles.css) as audited in this repo's product code.
-   Web wins over mobile here: warm paper, ink pills, lilac secondary.
-   Mobile gray (#D9D9D9) and purple CTAs (#6A4CB5) are not used.
-   Chat bubbles follow the marketing mock, not WhatsApp's own chrome. */
+/* Generated from ui/brand-tokens.json — keep in sync with admeasy-ai-assistant. */
+
+@font-face {
+  font-family: Gaegu;
+  src: url(https://admeasy.ai/fonts/Gaegu-Bold.woff2) format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: Nunito;
+  src: url(https://admeasy.ai/fonts/Nunito-Regular.woff2) format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   --bg: #f6f3ee;
@@ -18,6 +29,8 @@
   --wa: #128c7e;
   --shadow: 0 18px 50px rgba(80, 50, 90, 0.08);
   --radius: 28px;
+  --radius-bubble: 18px;
+  --radius-input: 14px;
   --them: #e7f3ff;
   --me: #ffe8d6;
   --danger: #b4233a;
@@ -25,6 +38,16 @@
   --danger-bg: #fff5f4;
   --danger-line: #e8b4b0;
   --ok: #6f9468;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 18px;
+  --space-lg: 28px;
+  --space-xl: 56px;
+  --font-base: 17px;
+  --font-small: 13px;
+  --bp-md: 720px;
+  --bp-lg: 900px;
+  --bp-xl: 980px;
   color-scheme: light;
 }
 
@@ -37,7 +60,7 @@ body {
   background-size: 18px 18px;
   color: var(--ink);
   font-family: Nunito, "Segoe UI", sans-serif;
-  font-size: 17px;
+  font-size: var(--font-base);
   line-height: 1.5;
   text-transform: lowercase;
 }
@@ -172,7 +195,7 @@ h1, h2, h3, .brand-name, .screen-title {
   text-decoration: none;
   border: 1px solid transparent;
   font-weight: 700;
-  font-size: 17px;
+  font-size: var(--font-base);
 }
 .btn-dark, .btn-primary { background: var(--ink); color: #fff; }
 .btn-secondary { background: var(--lilac); color: var(--ink); border-color: rgba(34, 31, 38, 0.08); }
@@ -270,6 +293,6 @@ code, .mono {
   * { scroll-behavior: auto; }
 }
 
-@media (min-width: 720px) {
+@media (min-width: var(--bp-md)) {
   .screen-title { font-size: clamp(2rem, 4vw, 2.4rem); }
 }

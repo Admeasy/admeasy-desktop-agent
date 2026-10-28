@@ -4,7 +4,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from .. import permissions
+from .. import auth, permissions
+from ..backend_client import BackendClient, BackendError
 from ..config import platform_name
 from ..folders import grant, pick_folder, revoke
 from ..links import create_job, register_url_handler
@@ -24,26 +25,19 @@ def install_snippet(state) -> dict:
     backend = state.settings.backend
     code = ""
     try:
-        import httpx
-        from .. import auth
-        token = auth.refresh(backend) or auth.load_secret("access_token")
-        if token:
-            r = httpx.post(
-                f"{backend.rstrip('/')}/devices/pair-codes",
-                headers={"Authorization": f"Bearer {token}"},
-                json={"client": "desktop"},
-                timeout=6,
-            )
-            if r.status_code == 200 and isinstance(r.json(), dict):
-                code = str(r.json().get("code") or "")
+        client = BackendClient(state.settings)
+        r = client.request("POST", "/devices/pair-codes", json_body={"client": "desktop"}, timeout=8)
+        if isinstance(r, dict):
+            code = str(r.get("code") or "")
+    except BackendError:
+        code = ""
     except Exception:
         code = ""
     pair = f" --pair {code}" if code else ""
     note = (
         "This code is single-use. The helper trades it for a device token on the same account."
         if code else
-        "The backend does not issue pairing codes yet. The command installs the helper and "
-        "opens Google sign-in so this computer joins the same account as your phone and WhatsApp."
+        "Sign in on this computer first to mint a pairing code, or run the one-liner and complete Google sign-in."
     )
     result = {
         "macos": f"curl -fsSL {GITHUB_SH} | bash -s --{pair} --backend {backend}",
@@ -163,13 +157,14 @@ def handle_post(state, name: str, body: dict) -> dict | None:
 def public_state(state, base: dict) -> dict:
     detail = permissions.detail()
     ready = permissions.ready(detail, bool(getattr(state.settings, "clipboard_skipped", False)))
+    token = auth.load_secret("access_token")
     base.update({
         "permission_detail": detail,
         "perms_ready": ready,
         "onboarding_complete": bool(state.settings.onboarding_complete),
         "capabilities": toggles(state.settings),
         "folders": folder_roots(state.settings),
-        "reminders": list_reminders(),
+        "reminders": list_reminders(state.settings, token),
         "audit": read_audit(40),
         "install": install_snippet(state) if base.get("signed_in") else {
             "macos": f"curl -fsSL {GITHUB_SH} | bash -s -- --backend {state.settings.backend}",
