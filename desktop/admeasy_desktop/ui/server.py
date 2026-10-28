@@ -21,9 +21,7 @@ from ..config import Settings
 from ..entitlements import EntitlementsAuthError, EntitlementsClient, EntitlementsError, InviteError
 from ..runtime import app_executable
 from ..log_buffer import tail
-from .paths import ui_dir
-
-INDEX = ui_dir() / "index.html"
+from .paths import load_index_html, ui_file, validate_ui_bundle
 
 
 class UiState:
@@ -210,6 +208,8 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
 
         def do_GET(self):
             path = self.path.split("?", 1)[0]
+            if path in ("", "/"):
+                path = "/"
             if path == "/api/state":
                 return self._json(state.snapshot())
             if path == "/api/logs":
@@ -235,18 +235,18 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
                 return self._bytes(blob, "text/plain; charset=utf-8")
             static = {
                 "/theme.css": ("theme.css", "text/css; charset=utf-8"),
-                "/app.js": ("app.js", "text/javascript; charset=utf-8"),
-                "/sw.js": ("sw.js", "text/javascript; charset=utf-8"),
+                "/app.js": ("app.js", "application/javascript; charset=utf-8"),
+                "/sw.js": ("sw.js", "application/javascript; charset=utf-8"),
                 "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
             }
             if path in static:
                 name, ctype = static[path]
-                path = ui_dir() / name
-                if not path.is_file():
-                    return self._json({"error": f"missing {name}"}, 404)
-                return self._bytes(path.read_bytes(), ctype)
-            html = INDEX.read_text(encoding="utf-8").replace("__TOKEN__", state.token)
-            return self._bytes(html.encode(), "text/html; charset=utf-8")
+                asset = ui_file(name)
+                return self._bytes(asset.read_bytes(), ctype)
+            if path in ("/", "/index.html"):
+                html = load_index_html(state.token)
+                return self._bytes(html.encode("utf-8"), "text/html; charset=utf-8")
+            return self._json({"error": "not found"}, 404)
 
         def _backend_write(self, route: str, body: dict | None = None):
             try:

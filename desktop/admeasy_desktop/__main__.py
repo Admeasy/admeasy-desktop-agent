@@ -27,15 +27,41 @@ from admeasy_desktop.config import CONFIG_PATH, LOG_DIR, Settings, platform_name
 from admeasy_desktop.runtime import app_executable, frozen
 
 
+def _wait_for_html_ui(base_url: str) -> None:
+    for _ in range(80):
+        try:
+            with urllib.request.urlopen(base_url, timeout=0.25) as res:
+                body = res.read(512).decode("utf-8", errors="replace")
+                if res.status == 200 and "<!doctype html" in body.lower() and "id=\"app\"" in body:
+                    return
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            pass
+        time.sleep(0.05)
+    raise RuntimeError("The UI server did not return the sign-in page. See ~/.admeasy/logs/agent.log")
+
+
 def cmd_run(background: bool) -> None:
     from admeasy_desktop.agent import Agent
     from admeasy_desktop.log_buffer import configure_logging
+    from admeasy_desktop.ui.paths import load_index_html, validate_ui_bundle
     from admeasy_desktop.ui.server import UiState, serve
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     configure_logging(str(LOG_DIR / "agent.log"))
     s = Settings.load()
     if not CONFIG_PATH.exists():
         s.save()
+    missing = validate_ui_bundle()
+    if missing:
+        msg = "Admeasy UI files are missing from this build:\n" + "\n".join(missing[:5])
+        logging.getLogger("admeasy-desktop").error(msg)
+        if frozen():
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    ctypes.windll.user32.MessageBoxW(0, msg, "Admeasy", 0x10)
+                except Exception:
+                    pass
+            raise SystemExit(msg)
     ui = UiState(s)
     agent = Agent(s)
     ui.agent = agent
@@ -50,13 +76,11 @@ def cmd_run(background: bool) -> None:
     threading.Thread(target=lambda: asyncio.run(agent.tunnel()), daemon=True).start()
     _srv, port = serve(ui)
     url = f"http://127.0.0.1:{port}/"
-    for _ in range(80):
-        try:
-            with urllib.request.urlopen(url, timeout=0.25) as res:
-                if res.status == 200:
-                    break
-        except (urllib.error.URLError, TimeoutError, OSError):
-            time.sleep(0.05)
+    _wait_for_html_ui(url)
+    try:
+        httpx.get(f"{s.backend.rstrip('/')}/health", timeout=8).raise_for_status()
+    except Exception as exc:
+        logging.getLogger("admeasy-desktop").warning("backend health check failed (%s); UI will still open", exc)
     print(f"Admeasy is open at {url}", flush=True)
     from admeasy_desktop.reminders import Scheduler
 
@@ -79,7 +103,15 @@ def cmd_run(background: bool) -> None:
     try:
         import webview
 
-        webview.create_window("Admeasy", url, width=460, height=720)
+        page_html = load_index_html(ui.token)
+        webview.create_window(
+            "Admeasy",
+            html=page_html,
+            url=url,
+            width=460,
+            height=720,
+            background_color="#f6f3ee",
+        )
         webview.start()  # must own the main thread on macOS
     except Exception as exc:
         logging.getLogger("admeasy-desktop").warning("webview unavailable (%s), using browser", exc)

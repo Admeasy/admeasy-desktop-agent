@@ -19,6 +19,9 @@ jobs:
         working-directory: desktop
       - run: python -m pytest -q tests
         working-directory: desktop
+      - name: Packaged UI smoke (PyInstaller onedir)
+        run: bash packaging/smoke_packaged_ui.sh
+        working-directory: desktop
   macos:
     needs: test
     # secrets cannot be used in job-level if: (invalid workflow). Opt in via workflow_dispatch.

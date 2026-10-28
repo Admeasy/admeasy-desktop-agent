@@ -1,4 +1,4 @@
-# Admeasy desktop beta (v0.5.0-beta.5)
+# Admeasy desktop beta (v0.5.0-beta.6)
 
 **You do not run curl.** Download the app, open it, sign in with Google.
 
@@ -8,10 +8,10 @@ Prefer **signed** release assets when listed on GitHub. Unsigned builds use `-un
 
 ## macOS (normal users)
 
-1. Download **`Admeasy-0.5.0-beta.5-macos-unsigned.dmg`** from [Releases](https://github.com/Admeasy/admeasy-desktop-agent/releases).
+1. Download **`Admeasy-0.5.0-beta.6-macos-unsigned.dmg`** from [Releases](https://github.com/Admeasy/admeasy-desktop-agent/releases).
 2. Open the DMG → drag **Admeasy** to **Applications**.
 3. **First launch:** macOS may say the app “cannot be opened”. Open **System Settings → Privacy & Security**, scroll down, click **Open Anyway** (or right-click the app → **Open** once).
-4. Open Admeasy again. You should see the invite / sign-in screen (warm paper UI), **not** a blank white window.
+4. Open Admeasy again. You should see the invite / sign-in screen (warm paper UI), **not** raw JavaScript text or a blank white window.
 5. Enter an invite code if needed, then **Continue with Google**. Grant **Screen Recording** and **Accessibility** when asked.
 6. Leave the app running (it registers a background helper for your phone).
 
@@ -23,10 +23,16 @@ Terminal install needs **Python 3.11+** (macOS’s built-in 3.9 is too old). Use
 
 ## Windows
 
-1. Download **`Admeasy-0.5.0-beta.5-windows-unsigned.exe`** from Releases.
+1. Download **`Admeasy-0.5.0-beta.6-windows-unsigned.exe`** from Releases.
 2. Run the installer (WebView2 installed if needed).
 3. Enter an invite code, then sign in with Google. Grant Screen Recording + Accessibility.
 4. Optional: `pip install uiautomation` is bundled in the installer build for UI Automation snapshots.
+
+## What’s new in 0.5.0-beta.6
+
+- Fix window showing raw `app.js` source: correct bundle paths, HTML-only `/`, pywebview loads `html` + base URL
+- Packaged-build smoke test in CI (PyInstaller onedir + MIME checks)
+- Startup checks UI bundle + Lightsail `/health` before opening the window
 
 ## What’s new in 0.5.0-beta.5
 
