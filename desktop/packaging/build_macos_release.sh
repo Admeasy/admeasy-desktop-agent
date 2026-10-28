@@ -15,6 +15,7 @@ pip install -q -U pip wheel
 pip install -q -r "$ROOT/requirements.txt" pyinstaller
 pip install -q 'pyobjc-framework-Quartz>=10' 'pyobjc-framework-ApplicationServices>=10' || true
 export ADMEASY_RELEASE_VERSION="$VER"
+bash make_icon.sh 2>/dev/null || true
 python -m PyInstaller admeasy.spec --noconfirm --distpath dist --workpath build
 APP=dist/Admeasy.app
 

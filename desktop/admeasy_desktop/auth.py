@@ -1,16 +1,13 @@
 """Google sign-in for the desktop app and device enrolment.
 
-Flow (same Google OAuth app and redirect URI as the phone, so no new Google Cloud setup):
-  1. open the system browser at  {backend}/auth/google/start?desktop_port=<p>&nonce=<n>
-  2. the backend finishes Google OAuth and redirects to http://127.0.0.1:<p>/callback?access_token=...&nonce=<n>
-  3. this module's loopback server checks the nonce, stores the tokens in the OS keychain
-  4. POST /devices/register with the user's JWT -> device_id + device_token (shown once, stored in the keychain)
-The same Google account yields the same Admeasy user id on phone and computer, so the phone can see this device.
+Tokens live in ~/.admeasy/secrets.json for the bundled .app (no repeated Keychain
+password prompts). Developers can force Keychain with ADMEASY_SECRETS=keychain.
 """
 from __future__ import annotations
 
 import http.server
 import json
+import os
 import secrets
 import socket
 import threading
@@ -22,12 +19,33 @@ import httpx
 
 from . import VERSION
 from .api import DevicesDisabledError, raise_for_devices
-from .config import HOME, Settings, platform_name
+from .config import Settings, platform_name
+from . import config as config_mod
+from .runtime import frozen
 
 SERVICE = "ai.admeasy.desktop"
+_STORE = "secrets.json"
+
+
+def _use_keychain() -> bool:
+    mode = os.environ.get("ADMEASY_SECRETS", "auto").lower()
+    if mode in ("file", "0", "false", "no"):
+        return False
+    if mode in ("keychain", "1", "true", "yes"):
+        return True
+    # Bundled app: one file, one folder users understand; avoids 5–10 login prompts.
+    if frozen():
+        return False
+    try:
+        import keyring  # noqa: F401
+    except Exception:
+        return False
+    return True
 
 
 def _kr():
+    if not _use_keychain():
+        return None
     try:
         import keyring
         return keyring
@@ -35,67 +53,93 @@ def _kr():
         return None
 
 
-def save_secret(name: str, value: str) -> None:
-    kr = _kr()
+def _file_path():
+    return config_mod.HOME / _STORE
+
+
+def _read_file() -> dict:
+    p = _file_path()
+    if not p.exists():
+        return {}
     try:
-        if kr:
-            kr.set_password(SERVICE, name, value)
-            return
+        data = json.loads(p.read_text())
+        return data if isinstance(data, dict) else {}
     except Exception:
+        return {}
+
+
+def _write_file(data: dict) -> None:
+    config_mod.HOME.mkdir(parents=True, exist_ok=True)
+    p = _file_path()
+    p.write_text(json.dumps(data, indent=2))
+    try:
+        os.chmod(p, 0o600)
+    except OSError:
         pass
-    HOME.mkdir(parents=True, exist_ok=True)  # keychain unavailable (headless Linux): 0600 file fallback
-    p = HOME / "secrets.json"
-    d = json.loads(p.read_text()) if p.exists() else {}
-    d[name] = value
-    p.write_text(json.dumps(d))
-    p.chmod(0o600)
+
+
+def _load_blob() -> dict:
+    kr = _kr()
+    if kr:
+        try:
+            raw = kr.get_password(SERVICE, _STORE)
+            if raw:
+                data = json.loads(raw)
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    return _read_file()
+
+
+def _save_blob(data: dict) -> None:
+    kr = _kr()
+    if kr:
+        try:
+            kr.set_password(SERVICE, _STORE, json.dumps(data))
+            return
+        except Exception:
+            pass
+    _write_file(data)
+
+
+def save_secret(name: str, value: str) -> None:
+    data = _load_blob()
+    data[name] = value
+    _save_blob(data)
+
+
+def save_secrets(values: dict[str, str]) -> None:
+    data = _load_blob()
+    data.update({k: v for k, v in values.items() if v is not None})
+    _save_blob(data)
 
 
 def load_secret(name: str) -> str | None:
-    kr = _kr()
-    try:
-        if kr:
-            v = kr.get_password(SERVICE, name)
-            if v:
-                return v
-    except Exception:
-        pass
-    p = HOME / "secrets.json"
-    return json.loads(p.read_text()).get(name) if p.exists() else None
+    v = _load_blob().get(name)
+    return str(v) if v is not None and v != "" else None
 
 
 def clear_device_secrets() -> None:
+    data = _load_blob()
     for n in ("device_id", "device_token"):
-        kr = _kr()
-        try:
-            if kr:
-                kr.delete_password(SERVICE, n)
-        except Exception:
-            pass
-    p = HOME / "secrets.json"
-    if p.exists():
-        d = json.loads(p.read_text())
-        for n in ("device_id", "device_token"):
-            d.pop(n, None)
-        p.write_text(json.dumps(d))
-        p.chmod(0o600)
+        data.pop(n, None)
+    _save_blob(data)
 
 
 def clear_secrets() -> None:
-    for n in ("access_token", "refresh_token", "email", "device_id", "device_token", "pending_invite"):
-        kr = _kr()
+    kr = _kr()
+    if kr:
         try:
-            if kr:
-                kr.delete_password(SERVICE, n)
+            kr.delete_password(SERVICE, _STORE)
         except Exception:
             pass
-    p = HOME / "secrets.json"
+    p = _file_path()
     if p.exists():
         p.unlink()
 
 
 def _free_port() -> int:
-    """Loopback port in 1024–65535 (backend ignores desktop_port outside this range)."""
     for _ in range(40):
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
@@ -110,11 +154,6 @@ def _sign_in_nonce() -> str:
 
 
 def login_via_browser(backend: str, timeout_s: int = 300, open_browser=webbrowser.open, invite: str | None = None) -> dict:
-    """Blocks until the browser hands the tokens back. Returns {access_token, refresh_token, email}.
-
-    `invite` is the normalized code from POST /entitlements/invites/validate. The backend
-    stores it on the OAuth state and sets referred_by when the account is created.
-    """
     port, nonce = _free_port(), _sign_in_nonce()
     got: dict = {}
     done = threading.Event()
@@ -162,14 +201,14 @@ def refresh(backend: str) -> str | None:
     if r.status_code != 200:
         return None
     j = r.json()
-    save_secret("access_token", j["access_token"])
+    updates = {"access_token": j["access_token"]}
     if j.get("refresh_token"):
-        save_secret("refresh_token", j["refresh_token"])
+        updates["refresh_token"] = j["refresh_token"]
+    save_secrets(updates)
     return j["access_token"]
 
 
 def enrol(settings: Settings, capabilities: dict, os_version: str) -> dict:
-    """Register this computer under the signed-in account (once)."""
     existing = load_secret("device_id"), load_secret("device_token")
     if existing[0] and existing[1]:
         return {"device_id": existing[0], "device_token": existing[1]}
@@ -186,8 +225,7 @@ def enrol(settings: Settings, capabilities: dict, os_version: str) -> dict:
         raise_for_devices(r)
         r.raise_for_status()
         j = r.json()
-        save_secret("device_id", j["device_id"])
-        save_secret("device_token", j["device_token"])
+        save_secrets({"device_id": j["device_id"], "device_token": j["device_token"]})
         return j
     raise RuntimeError("could not register this computer")
 
