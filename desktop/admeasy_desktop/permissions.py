@@ -16,6 +16,36 @@ SETTINGS_URLS = {
 }
 
 
+def clipboard_available() -> bool:
+    """True when this process can read the OS clipboard. Does not write to it."""
+    try:
+        import pyperclip
+        pyperclip.paste()
+        return True
+    except Exception:
+        return False
+
+
+def detail() -> dict:
+    """Status the window shows. `check()` stays the small wire snapshot."""
+    base = check()
+    return {
+        "screen": bool(base.get("screen")),
+        "accessibility": bool(base.get("accessibility")),
+        "input": bool(base.get("accessibility")),
+        "clipboard": clipboard_available(),
+        "platform_note": base.get("platform_note") or "",
+    }
+
+
+def ready(snapshot: dict, clipboard_skipped: bool = False) -> bool:
+    if not snapshot.get("screen") or not snapshot.get("accessibility") or not snapshot.get("input"):
+        return False
+    if snapshot.get("clipboard"):
+        return True
+    return bool(clipboard_skipped)
+
+
 def check(prompt: bool = False) -> dict:
     """{screen, accessibility}: True/False on macOS, True on Windows/Linux (no per-app grant exists there)."""
     if sys.platform != "darwin":

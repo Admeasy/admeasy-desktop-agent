@@ -1,5 +1,7 @@
 # Admeasy Desktop Agent: control your own computer from your phone
 
+The window is now also a chat client. What a browser cannot do, and the helper/PWA split, is in [`ARCHITECTURE_WEB_APP.md`](ARCHITECTURE_WEB_APP.md). The sections below describe the phone → backend → computer tunnel, which is unchanged.
+
 Status: v0.1 scaffold. Backend, agent, tests and packaging scripts are in this repo. Sections 9 and 10 list what is verified and what is not.
 
 ## 1. The idea

@@ -1,6 +1,8 @@
 # admeasy-desktop-agent
 
-Desktop companion for [Admeasy](https://github.com/Admeasy/admeasy-ai-assistant): your phone (the command centre) drives actions on **your own** Mac or Windows PC through the same FastAPI backend, Supabase project, and Google account as the mobile app.
+Desktop companion for [Admeasy](https://github.com/Admeasy/admeasy-ai-assistant): a chat window on your Mac, Windows, or Linux PC, plus the existing path where your phone drives **your own** computer. Same FastAPI backend, Supabase project, and Google account as the mobile app and WhatsApp.
+
+The window cannot do OS work by itself. A local helper (this package) holds Screen Recording, Accessibility, the shell, and Playwright. Read [`docs/ARCHITECTURE_WEB_APP.md`](docs/ARCHITECTURE_WEB_APP.md) before changing that split. Install without a signing certificate: [`desktop/README.md`](desktop/README.md).
 
 ## Beta installers (no terminal)
 

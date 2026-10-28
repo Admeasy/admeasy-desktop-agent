@@ -36,8 +36,27 @@ class Settings:
     # sends/calls do.
     approval_mode: str = "autopilot"
     approval_mode_chosen: bool = False  # set when the user picks a mode in the UI
+    # Legacy implicit roots (Downloads, Desktop, Documents). New installs set
+    # use_approved_folders_only and ignore this list until the user approves each folder.
     shared_folders: list[str] = field(default_factory=lambda: [str(Path.home() / d) for d in
                                                                 ("Downloads", "Desktop", "Documents")])
+    approved_folders: list[str] = field(default_factory=list)
+    use_approved_folders_only: bool = False
+    # New configs (no file yet) turn the gate on inside load(). Existing files stay False
+    # so a computer the phone already drives is not locked out.
+    gate_until_onboarding: bool = False
+    onboarding_complete: bool = False
+    clipboard_skipped: bool = False
+    capability_toggles: dict = field(default_factory=lambda: {
+        "shell": True,
+        "files": True,
+        "screen": True,
+        "input": True,
+        "browser": True,
+        "notify": True,
+    })
+    command_allowlist: list[str] = field(default_factory=list)
+    command_blocklist: list[str] = field(default_factory=list)
     keep_awake: bool = True
     start_at_login: bool = True
     paused: bool = False
@@ -55,6 +74,14 @@ class Settings:
 
     @classmethod
     def load(cls) -> "Settings":
+        if not CONFIG_PATH.exists():
+            fresh = cls()
+            # First run of this product: no implicit folders, and the computer stays idle
+            # until the window's permission steps are finished.
+            fresh.gate_until_onboarding = True
+            fresh.use_approved_folders_only = True
+            fresh.shared_folders = []
+            return fresh
         try:
             raw = json.loads(CONFIG_PATH.read_text())
             if raw.get("browser_automation") == "playwright_profile" and not os.environ.get("ADMEASY_PLAYWRIGHT"):

@@ -20,7 +20,7 @@ from admeasy_desktop.api import (
     DevicesNotDeployedError,
     devices_api_state,
 )
-from admeasy_desktop.config import CONFIG_PATH, LOG_DIR, Settings
+from admeasy_desktop.config import CONFIG_PATH, LOG_DIR, Settings, platform_name
 from admeasy_desktop.runtime import app_executable, frozen
 
 
@@ -45,6 +45,14 @@ def cmd_run(background: bool) -> None:
     threading.Thread(target=lambda: asyncio.run(agent.tunnel()), daemon=True).start()
     _srv, port = serve(ui)
     url = f"http://127.0.0.1:{port}/"
+    print(f"Admeasy is open at {url}", flush=True)
+    from admeasy_desktop.reminders import Scheduler
+
+    def _reminded(row: dict) -> None:
+        ui.chat._push({"type": "final", "bubbles": [str(row.get("text") or "reminder")]})
+
+    Scheduler(_reminded).start()
+    ui.chat.start()
 
     def set_paused(p: bool) -> None:
         s.paused = p
@@ -274,6 +282,71 @@ def cmd_doctor(click_test: bool = False) -> int:
     return 0 if ok else 1
 
 
+def _cmd_pair(settings, code: str) -> int:
+    """Redeem a short-lived pairing code. Exit 2 means the backend route is not deployed."""
+    body = {
+        "code": code,
+        "name": settings.device_name,
+        "platform": platform_name(),
+        "os_version": platform.platform(),
+    }
+    try:
+        r = httpx.post(f"{settings.backend.rstrip('/')}/devices/pair/redeem", json=body, timeout=20)
+    except httpx.HTTPError as exc:
+        print(f"could not reach the backend: {exc}", file=sys.stderr)
+        return 1
+    if r.status_code == 404:
+        print("pairing redeem is not on this backend yet; sign in with Google instead", file=sys.stderr)
+        return 2
+    if r.status_code >= 400:
+        print(r.text[:300], file=sys.stderr)
+        return 1
+    payload = r.json()
+    for key in ("access_token", "refresh_token", "email"):
+        if payload.get(key):
+            auth.save_secret(key, payload[key])
+    if payload.get("device_id") and payload.get("device_token"):
+        auth.save_secret("device_id", payload["device_id"])
+        auth.save_secret("device_token", payload["device_token"])
+    print("paired", payload.get("email") or settings.device_name)
+    return 0
+
+
+def _cmd_handle_url(settings, url: str) -> int:
+    from admeasy_desktop.links import load_job, open_in_terminal, parse_run_url
+    from admeasy_desktop.policy import judge
+    from admeasy_desktop.safety import folder_roots
+    try:
+        job_id = parse_run_url(url)
+        rec = load_job(job_id)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    verdict = judge(
+        "shell",
+        {"command": rec["command"]},
+        settings.approval_mode,
+        folder_roots(settings),
+        allowlist=settings.command_allowlist,
+        blocklist=settings.command_blocklist,
+    )
+    if not verdict.allow or verdict.ask:
+        print(verdict.reason or "blocked", file=sys.stderr)
+        return 1
+    open_in_terminal(rec["command"], job_id)
+    return 0
+
+
+def _boot_service() -> None:
+    if sys.platform != "darwin":
+        return
+    plist = os.path.expanduser("~/Library/LaunchAgents/ai.admeasy.desktop.plist")
+    domain = f"gui/{os.getuid()}"
+    subprocess = __import__("subprocess")
+    subprocess.run(["launchctl", "bootout", domain, plist], check=False)
+    subprocess.run(["launchctl", "bootstrap", domain, plist], check=False)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="admeasy-desktop")
     sub = ap.add_subparsers(dest="cmd")
@@ -281,8 +354,12 @@ def main() -> None:
     r.add_argument("--background", action="store_true")
     doc = sub.add_parser("doctor")
     doc.add_argument("--click-test", action="store_true", help="verify clicks/typing really reach apps (TextEdit read-back) + overlay mapping")
-    for n in ("login", "devices", "logout"):
+    for n in ("login", "devices", "logout", "register-handler", "install-service"):
         sub.add_parser(n)
+    pair = sub.add_parser("pair")
+    pair.add_argument("code")
+    handle = sub.add_parser("handle-url")
+    handle.add_argument("url")
     a = ap.parse_args()
     s = Settings.load()
     if a.cmd in (None, "run"):
@@ -351,6 +428,20 @@ def main() -> None:
     elif a.cmd == "logout":
         from admeasy_desktop.ui.server import UiState
         UiState(s).logout()
+    elif a.cmd == "pair":
+        sys.exit(_cmd_pair(s, a.code))
+    elif a.cmd == "handle-url":
+        sys.exit(_cmd_handle_url(s, a.url))
+    elif a.cmd == "register-handler":
+        from admeasy_desktop.links import register_url_handler
+        from admeasy_desktop.system_hooks import handler_argv
+        print(register_url_handler(handler_argv()))
+    elif a.cmd == "install-service":
+        system_hooks.set_autostart(True)
+        from admeasy_desktop.links import register_url_handler
+        from admeasy_desktop.system_hooks import handler_argv
+        print(register_url_handler(handler_argv()))
+        _boot_service()
 
 
 if __name__ == "__main__":

@@ -155,7 +155,10 @@ def refresh(backend: str) -> str | None:
     rt = load_secret("refresh_token")
     if not rt:
         return None
-    r = httpx.post(f"{backend.rstrip('/')}/auth/refresh", json={"refresh_token": rt}, timeout=20)
+    try:
+        r = httpx.post(f"{backend.rstrip('/')}/auth/refresh", json={"refresh_token": rt}, timeout=20)
+    except httpx.HTTPError:
+        return None
     if r.status_code != 200:
         return None
     j = r.json()

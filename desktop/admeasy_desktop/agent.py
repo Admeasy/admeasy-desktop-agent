@@ -34,6 +34,7 @@ from .job_kinds import JOB_KINDS, TOOL_MANIFEST
 from .job_limits import job_idempotency_key, job_timeout_s
 from .job_store import JobStore
 from .policy import judge
+from .safety import audit, folder_roots, gate_job, toggles
 from .results import normalize as normalize_result
 from .signin_handoff import run as signin_run
 from .surface_status import collect as surface_collect
@@ -42,7 +43,7 @@ from . import agent_edge_overlay, cursor_overlay
 from .agent_session import AgentSession
 
 log = logging.getLogger("admeasy-desktop")
-APPROVAL_WAIT_S = 120
+APPROVAL_WAIT_S = 300
 
 
 class Agent:
@@ -67,6 +68,8 @@ class Agent:
         self._snap = None
         self.session = AgentSession()
         self._edge_task: asyncio.Task | None = None
+        self.feed: list[dict] = []
+        self.local_approvals: dict[str, dict] = {}
 
     async def send(self, msg: dict) -> None:
         async with self.send_lock:
@@ -92,7 +95,8 @@ class Agent:
             "shell": True,
             "terminal": True,
             "cli_profiles": self._cli_profiles(),
-            "files": self.s.shared_folders,
+            "files": folder_roots(self.s),
+            "capability_toggles": toggles(self.s),
             "clipboard": True,
             "ide": ["cursor", "vscode"],
             "messaging": True,
@@ -162,6 +166,9 @@ class Agent:
             msg["objective_id"] = oid
         await self.send(msg)
         self.objective_step = text[:120]
+        self.feed.append({"role": "assistant", "text": text[:300], "kind": "step"})
+        if len(self.feed) > 200:
+            del self.feed[:100]
         self.session.heartbeat()
         self._sync_edge_border()
 
@@ -169,6 +176,13 @@ class Agent:
         aid = str(uuid.uuid4())
         fut = asyncio.get_running_loop().create_future()
         self.approvals[aid] = fut
+        self.local_approvals[aid] = {
+            "id": aid,
+            "job_id": jid,
+            "action": str(kind)[:80],
+            "summary": str(verdict.reason)[:400],
+            "risk": str(verdict.risk)[:20],
+        }
         self.session.set_approval_wait(True)
         self._sync_edge_border()
         await self.send(
@@ -187,6 +201,7 @@ class Agent:
             return False
         finally:
             self.approvals.pop(aid, None)
+            self.local_approvals.pop(aid, None)
             self.session.set_approval_wait(False)
             self._sync_edge_border()
 
@@ -244,8 +259,16 @@ class Agent:
         try:
             if self.s.paused:
                 res = {"status": "blocked", "error": "the user paused Admeasy on this computer"}
+            elif (gated := gate_job(self.s, kind, p)):
+                res = gated
             else:
-                v = judge(kind, p, self.s.approval_mode, self.s.shared_folders)
+                autonomous = bool(p.get("autonomous") or p.get("scheduled") or p.get("reminder_id"))
+                v = judge(
+                    kind, p, self.s.approval_mode, folder_roots(self.s),
+                    allowlist=getattr(self.s, "command_allowlist", None),
+                    blocklist=getattr(self.s, "command_blocklist", None),
+                    autonomous=autonomous,
+                )
                 if not v.allow:
                     res = {"status": "blocked", "error": v.reason}
                 elif v.ask and not await self.ask_user(jid, kind, v):
@@ -285,6 +308,14 @@ class Agent:
         res = self._attach_evidence(jid, res)
         self.store.put_idempotent(idem, res)
         log.info("job %s %s -> %s", jid, kind, res.get("status"))
+        summary = str(p.get("command") or p.get("target") or p.get("op") or kind)[:180]
+        audit({
+            "kind": kind,
+            "status": res.get("status"),
+            "summary": summary,
+            "error": str(res.get("error") or "")[:180],
+            "autonomous": bool(p.get("autonomous") or p.get("scheduled") or p.get("reminder_id")),
+        })
         await self.send({"type": "result", "job_id": jid, **res})
 
     def _entitlement_block(self, kind: str, params: dict) -> dict | None:
@@ -485,7 +516,7 @@ class Agent:
                 out["status"] = "ok"
             return out
         if kind == "files":
-            out = await loop.run_in_executor(None, system.files, p, self.s.shared_folders)
+            out = await loop.run_in_executor(None, system.files, p, folder_roots(self.s))
             if out.get("status") == "done":
                 out["status"] = "ok"
             if p.get("op") == "append_rows" and out.get("status") == "ok":
@@ -576,6 +607,11 @@ class Agent:
                                     f.set_result(bool(m.get("allow")))
                             elif t == "cancel_all":
                                 self.cancel_all()
+                            elif t == "reminder" and toggles(self.s).get("notify", True):
+                                from .notify import toast
+                                text = str(m.get("text") or "reminder")
+                                toast("Admeasy", text)
+                                self.feed.append({"role": "assistant", "text": text, "kind": "reminder"})
                     finally:
                         watcher.cancel()
             except websockets.exceptions.InvalidStatus as e:
