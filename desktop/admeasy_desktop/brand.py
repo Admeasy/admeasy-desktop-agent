@@ -4,8 +4,7 @@ Product primary pink (`primaryPink` / mascot accent on web). Update here when de
 tokens change; overlays import from this module only.
 """
 
-# Live site token `--pink` from https://admeasy.ai (private theme source was not readable).
-# Swap this pair when design tokens land from admeasy-ai-assistant. See ui/theme.css.
+# Web token `--pink` (#e278a0) from admeasy-ai-assistant web/src/styles.css. See ui/theme.css.
 PRIMARY_PINK_HEX = "#e278a0"
 PRIMARY_PINK_RGB = (226 / 255.0, 120 / 255.0, 160 / 255.0)
 

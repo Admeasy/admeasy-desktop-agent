@@ -26,13 +26,14 @@ let bubbles = [];
 let live = "";
 const seenNotes = new Set();
 
-function shell(inner) {
+function shell(inner, opts = {}) {
   const online = state && state.online;
+  const chatClass = opts.chat ? " screen is-chat" : "";
   document.getElementById("app").replaceChildren($(`
     <div class="app">
       <header class="top">
         <div class="brand">
-          <img src="https://admeasy.ai/mascot.svg" width="36" height="36" alt="">
+          <span class="mascot"><img src="https://admeasy.ai/mascot.svg" width="30" height="30" alt=""></span>
           <span class="brand-name">admeasy</span>
           <span class="dot ${online ? "on" : "off"}" title="${online ? "computer connected" : "computer offline"}"></span>
         </div>
@@ -44,7 +45,7 @@ function shell(inner) {
         <button data-go="plan">plan</button>
         <button data-go="reminders">notifications</button>
       </nav>` : ""}
-      <div class="screen">${inner}</div>
+      <div class="screen${chatClass}">${inner}</div>
     </div>`));
   document.getElementById("more").onclick = () => { menuOpen = !menuOpen; draw(); };
   document.querySelectorAll("[data-go]").forEach((b) => {
@@ -61,7 +62,7 @@ function invite() {
       <label>invite code<input id="code" type="text" autocomplete="off" placeholder="#1111"></label>
       <button class="btn btn-dark" type="submit">check code</button>
     </form>
-    ${state.pending_invite ? `<button class="btn btn-pink" id="login">${state.logging_in ? "waiting for the browser…" : "continue with google"}</button>` : ""}
+    ${state.pending_invite ? `<button class="btn btn-primary btn-block" id="login">${state.logging_in ? "waiting for the browser…" : "continue with google"}</button>` : ""}
     <button class="btn btn-light" id="existing">i already have an account</button>
     <p class="err">${esc(state.error || "")}</p>`);
   document.getElementById("invite").onsubmit = async (ev) => {
@@ -122,8 +123,8 @@ function chat() {
     ${threadHtml()}
     <form class="composer" id="say">
       <textarea id="text" rows="1" placeholder="${blocked ? "grant permissions before i act" : "message"}" ${blocked ? "disabled" : ""}></textarea>
-      <button class="btn btn-dark" ${blocked ? "disabled" : ""}>send</button>
-    </form>`);
+      <button class="btn btn-primary" type="submit" ${blocked ? "disabled" : ""}>send</button>
+    </form>`, { chat: true });
   const box = document.getElementById("thread");
   if (box) box.scrollTop = box.scrollHeight;
   document.querySelectorAll("[data-cmd]").forEach((b) => {
@@ -161,9 +162,9 @@ function profile() {
     <div class="card">
       <div class="row"><span class="muted">account</span><span>${esc(state.email || "signed out")}</span></div>
       <div class="row"><span class="muted">this computer</span><span>${esc(state.settings.device_name || "")}</span></div>
-      <div class="row"><span class="muted">phone link</span><span>${state.online ? "connected" : esc(state.detail || "offline")}</span></div>
+      <div class="row"><span class="muted">phone link</span><span class="pill ${state.online ? "pill-wa" : ""}">${state.online ? "connected" : esc(state.detail || "offline")}</span></div>
     </div>
-    <button class="btn btn-light" id="out">sign out and remove this computer</button>`);
+    <button class="btn btn-disconnect btn-block" id="out">sign out and remove this computer</button>`);
   document.getElementById("back").onclick = () => { screen = "chat"; draw(); };
   document.getElementById("out").onclick = async () => { await api("/api/logout", {}); screen = "chat"; await refresh(); };
 }
@@ -277,7 +278,7 @@ function reminders() {
       <button class="btn btn-dark" type="submit">save reminder</button>
     </form>
     <div class="card">${rows}</div>
-    <button class="btn btn-light" id="enable-push">allow notifications in this window</button>
+    <button class="btn btn-secondary btn-block" id="enable-push">allow notifications in this window</button>
     <p class="err" id="rerr"></p>`);
   document.getElementById("back").onclick = () => { screen = "chat"; draw(); };
   document.getElementById("rem").onsubmit = async (ev) => {
