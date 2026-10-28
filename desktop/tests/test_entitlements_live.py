@@ -44,7 +44,8 @@ def test_plans_catalog_is_the_three_plan_list(live):
 
 def test_founder_code_validates_and_junk_does_not(live):
     assert live.validate_invite("1111").normalized_code == "1111"
-    assert live.validate_invite("#1111").kind == "founder"
+    # The live catalog has called this both "founder" and "founder_starter".
+    assert live.validate_invite("#1111").kind in {"founder", "founder_starter"}
     with pytest.raises(InviteError) as bad:
         live.validate_invite("nope")
     assert bad.value.code == "invite_invalid"

@@ -4,6 +4,7 @@ from __future__ import annotations
 import http.server
 import json
 import platform
+import secrets
 import threading
 import time
 from pathlib import Path
@@ -11,6 +12,8 @@ from pathlib import Path
 import httpx
 
 from .. import auth, permissions, system_hooks
+from ..chat_bridge import ChatBridge
+from .actions import asset_bytes, handle_post, live_payload, public_state
 from ..api import DEVICES_DISABLED, DEVICES_NOT_DEPLOYED, DevicesDisabledError, DevicesNotDeployedError, raise_for_devices
 from ..config import Settings
 from ..entitlements import EntitlementsAuthError, EntitlementsClient, EntitlementsError, InviteError
@@ -25,6 +28,8 @@ class UiState:
         self.settings = settings
         self.online, self.detail, self.logging_in, self.error = False, "", False, ""
         self.agent = None
+        self.token = secrets.token_urlsafe(24)
+        self.chat = ChatBridge(settings)
         self.entitlements = EntitlementsClient(settings.backend)
         self._ent_cache = None
         self._ent_at = 0.0
@@ -152,7 +157,7 @@ class UiState:
         snap = self._load_entitlements() if s["signed_in"] else None
         invited = bool(snap and snap.invited)
         pending = auth.load_secret("pending_invite") or ""
-        return {
+        data = {
             **s,
             "online": self.online,
             "detail": self.detail,
@@ -169,6 +174,7 @@ class UiState:
             "agent_active": agent_ui.get("agent_active", False),
             "agent_pulse": agent_ui.get("agent_pulse", False),
         }
+        return public_state(self, data)
 
 
 def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
@@ -183,19 +189,61 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
             self.end_headers()
             self.wfile.write(b)
 
-        def do_GET(self):
-            if self.path == "/api/state":
-                return self._json(state.snapshot())
-            if self.path == "/api/logs":
-                return self._json({"lines": tail(150)})
+        def _csrf(self) -> bool:
+            origin = self.headers.get("Origin")
+            if not origin:
+                return True
+            host = self.headers.get("Host") or ""
+            if origin not in (f"http://{host}", f"https://{host}"):
+                return False
+            got = self.headers.get("X-Admeasy-Token") or ""
+            return secrets.compare_digest(got, state.token)
+
+        def _bytes(self, data: bytes, content_type: str):
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Type", content_type)
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
-            self.wfile.write(INDEX.read_bytes())
+            self.wfile.write(data)
+
+        def do_GET(self):
+            path = self.path.split("?", 1)[0]
+            if path == "/api/state":
+                return self._json(state.snapshot())
+            if path == "/api/logs":
+                return self._json({"lines": tail(150)})
+            if path == "/api/chat/history":
+                return self._json(state.chat.history())
+            if path == "/api/live":
+                return self._json(live_payload(state))
+            if path in ("/install.sh", "/install.ps1"):
+                blob = asset_bytes(path.lstrip("/"))
+                if blob is None:
+                    return self._json({"error": "installer missing"}, 404)
+                return self._bytes(blob, "text/plain; charset=utf-8")
+            static = {
+                "/theme.css": ("theme.css", "text/css; charset=utf-8"),
+                "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+                "/sw.js": ("sw.js", "text/javascript; charset=utf-8"),
+                "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+            }
+            if path in static:
+                name, ctype = static[path]
+                return self._bytes((INDEX.parent / name).read_bytes(), ctype)
+            html = INDEX.read_text(encoding="utf-8").replace("__TOKEN__", state.token)
+            return self._bytes(html.encode(), "text/html; charset=utf-8")
 
         def do_POST(self):
+            if not self._csrf():
+                return self._json({"error": "blocked"}, 403)
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
             name = self.path.removeprefix("/api/")
+            try:
+                extra = handle_post(state, name, body)
+            except ValueError as exc:
+                return self._json({"error": str(exc)}, 400)
+            if extra is not None:
+                return self._json(extra)
             if name == "invite":
                 state.submit_invite(str(body.get("code") or ""))
             elif name == "login":

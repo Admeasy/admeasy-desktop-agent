@@ -2,7 +2,7 @@
 
 Three layers, in order:
   1. HARD BLOCK  never runs, in any mode (disk wipe, shutdown, credential stores, the agent's own secrets).
-  2. APPROVAL    risky actions pause and ask the user (answered from the phone). No answer in 120 s = no.
+  2. APPROVAL    risky actions pause and ask the user (answered from the phone or the desktop window). No answer in 300 s = no.
   3. FREE        read-only and routine UI actions run without asking.
 Modes: autopilot (default) never asks for opening, clicking, typing or navigating; it asks only before a destructive
 shell/file step, an install, or a final send/call. ask_risky, ask_always and trusted as before.
@@ -81,9 +81,38 @@ def _autopilot(kind: str, p: dict, roots) -> Verdict:
     return Verdict(True, reason=kind, risk="low")
 
 
-def judge(kind: str, params: dict, mode: str, roots) -> Verdict:
-    """kind = the job kind the backend sent. params = its arguments."""
+def _command_text(kind: str, params: dict) -> str:
+    if kind not in ("shell", "terminal", "cli"):
+        return ""
+    return str(params.get("command") or params.get("prompt") or params.get("data") or "")
+
+
+def _listed(command: str, patterns) -> bool:
+    import fnmatch
+    text = (command or "").strip()
+    if not text:
+        return False
+    for raw in patterns or []:
+        pattern = str(raw or "").strip()
+        if not pattern:
+            continue
+        if text == pattern:
+            return True
+        if any(ch in pattern for ch in "*?["):
+            if fnmatch.fnmatchcase(text, pattern):
+                return True
+    return False
+
+
+def _judge_core(kind: str, params: dict, mode: str, roots, allowlist=None, blocklist=None) -> Verdict:
     p = params or {}
+    cmd = _command_text(kind, p)
+    if cmd and _listed(cmd, blocklist):
+        return Verdict(False, reason="blocked by your blocklist", risk="blocked")
+    if cmd and HARD_BLOCK.search(cmd):
+        return Verdict(False, reason="blocked: this command can destroy data or leak credentials", risk="blocked")
+    if cmd and _listed(cmd, allowlist):
+        return Verdict(True, ask=False, reason="on your allowlist", risk="low")
     if mode == "autopilot":
         return _autopilot(kind, p, roots)
     if kind == "shell":
@@ -157,3 +186,16 @@ def judge(kind: str, params: dict, mode: str, roots) -> Verdict:
             return Verdict(True, ask=mode != "trusted", reason="compose email", risk="high")
         return Verdict(True, ask=mode == "ask_always", reason=f"mail {p.get('op')}", risk="low")
     return Verdict(True, risk="low")  # screenshot, login_check, verify, ...
+
+
+def judge(kind: str, params: dict, mode: str, roots, allowlist=None, blocklist=None, autonomous: bool = False) -> Verdict:
+    """kind = the job kind the backend sent. params = its arguments.
+
+    A blocklist entry always denies, including in trusted mode and even when the same
+    command is also on the allowlist. An allowlist entry skips the approval prompt.
+    Autonomous or scheduled jobs cannot run anything that would have asked.
+    """
+    verdict = _judge_core(kind, params, mode, roots, allowlist, blocklist)
+    if autonomous and verdict.ask:
+        return Verdict(False, reason="scheduled jobs cannot run commands that need approval", risk="blocked")
+    return verdict

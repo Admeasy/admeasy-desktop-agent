@@ -47,4 +47,4 @@ markers = [
 ]
 
 [tool.setuptools.package-data]
-admeasy_desktop = ["chromium_browsers.json", "ui/*.html"]
+admeasy_desktop = ["chromium_browsers.json", "ui/*"]
