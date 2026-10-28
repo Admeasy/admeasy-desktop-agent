@@ -6,7 +6,7 @@ The window cannot do OS work by itself. A local helper (this package) holds Scre
 
 ## Beta installers (no terminal)
 
-Download **v0.5.0-beta.3** from [GitHub Releases](https://github.com/Admeasy/admeasy-desktop-agent/releases) (unsigned macOS `.dmg` and Windows `.exe` when signing secrets are not set). Install steps: [`docs/INSTALL_BETA.md`](docs/INSTALL_BETA.md).
+Download **v0.5.0-beta.4** from [GitHub Releases](https://github.com/Admeasy/admeasy-desktop-agent/releases) (unsigned macOS `.dmg` and Windows `.exe` when signing secrets are not set). Install steps: [`docs/INSTALL_BETA.md`](docs/INSTALL_BETA.md).
 
 ## Quick start (developers)
 

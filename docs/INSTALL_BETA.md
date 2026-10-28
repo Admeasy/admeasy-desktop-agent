@@ -1,4 +1,4 @@
-# Admeasy desktop beta (v0.5.0-beta.3)
+# Admeasy desktop beta (v0.5.0-beta.4)
 
 No terminal required. Pair with the same Google account as the Admeasy phone app.
 
@@ -6,7 +6,7 @@ Prefer **signed** release assets when listed on GitHub. Unsigned builds use `-un
 
 ## macOS
 
-1. Download **`Admeasy-0.5.0-beta.3-macos.dmg`** (or `*-unsigned.dmg`) from [Releases](https://github.com/Admeasy/admeasy-desktop-agent/releases).
+1. Download **`Admeasy-0.5.0-beta.4-macos.dmg`** (or `*-unsigned.dmg`) from [Releases](https://github.com/Admeasy/admeasy-desktop-agent/releases).
 2. Open the DMG → drag **Admeasy** to **Applications**.
 3. **Unsigned:** right-click **Open** once to bypass Gatekeeper.
 4. Enter an invite code, then sign in with Google (an account that is already invited can sign in directly). Grant **Screen Recording**, **Accessibility**, and **Full Disk** if you use Messages/comms jobs.
@@ -15,10 +15,16 @@ Prefer **signed** release assets when listed on GitHub. Unsigned builds use `-un
 
 ## Windows
 
-1. Download **`Admeasy-0.5.0-beta.3-windows.exe`** (or unsigned) from Releases.
+1. Download **`Admeasy-0.5.0-beta.4-windows.exe`** (or unsigned) from Releases.
 2. Run the installer (WebView2 installed if needed).
 3. Enter an invite code, then sign in with Google. Grant Screen Recording + Accessibility.
 4. Optional: `pip install uiautomation` is bundled in the installer build for UI Automation snapshots.
+
+## What’s new in 0.5.0-beta.4
+
+- Full Lightsail wiring: chat (`client=desktop`), pair codes, reminders, web push, employees, triggers, connectors, activity
+- Brand tokens vendored as `desktop/admeasy_desktop/ui/brand-tokens.json`
+- Desktop API notes in `docs/DESKTOP_API.md`
 
 ## What’s new in 0.5.0-beta.3
 
