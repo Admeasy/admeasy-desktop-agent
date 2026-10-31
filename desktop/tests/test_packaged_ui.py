@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import urllib.request
@@ -22,16 +23,18 @@ def pyinstaller_dist(tmp_path_factory):
     build = tmp_path_factory.mktemp("build")
     venv = tmp_path_factory.mktemp("venv")
     subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)
-    pip = venv / "bin" / "pip"
-    py = venv / "bin" / "python"
-    subprocess.run([str(pip), "install", "-q", "-U", "pip", "pyinstaller"], check=True)
-    subprocess.run([str(pip), "install", "-q", "-e", str(root)], check=True)
+    if sys.platform == "win32":
+        py = venv / "Scripts" / "python.exe"
+    else:
+        py = venv / "bin" / "python"
+    subprocess.run([str(py), "-m", "pip", "install", "-q", "-U", "pip", "pyinstaller"], check=True)
+    subprocess.run([str(py), "-m", "pip", "install", "-q", "-e", str(root)], check=True)
     env = {"ADMEASY_RELEASE_VERSION": "0.0.0-smoke"}
     subprocess.run(
         [str(py), "-m", "PyInstaller", "admeasy.spec", "--noconfirm",
          "--distpath", str(dist), "--workpath", str(build)],
         cwd=str(packaging),
-        env={**__import__("os").environ, **env},
+        env={**os.environ, **env},
         check=True,
         timeout=300,
     )

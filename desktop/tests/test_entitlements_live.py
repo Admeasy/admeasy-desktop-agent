@@ -5,7 +5,7 @@ import pytest
 from admeasy_desktop.entitlements import EntitlementsClient, InviteError
 
 BACKEND = "https://admeasy-backend.6h5y8j39qxdcg.ap-south-1.cs.amazonlightsail.com"
-pytestmark = pytest.mark.live_entitlements
+pytestmark = [pytest.mark.live_entitlements, pytest.mark.live_network]
 
 
 @pytest.fixture(scope="module")

@@ -17,7 +17,7 @@ jobs:
         with: {python-version: "3.12"}
       - run: pip install -e ".[dev]"
         working-directory: desktop
-      - run: python -m pytest -q tests
+      - run: python -m pytest -q tests -m "not live_network"
         working-directory: desktop
       - name: Packaged UI smoke (in-process PyInstaller layout)
         if: runner.os != 'Windows'

@@ -6,7 +6,7 @@ import pytest
 
 BACKEND = "https://admeasy-backend.6h5y8j39qxdcg.ap-south-1.cs.amazonlightsail.com"
 
-pytestmark = pytest.mark.live_backend
+pytestmark = [pytest.mark.live_backend, pytest.mark.live_network]
 
 
 @pytest.fixture(scope="module")

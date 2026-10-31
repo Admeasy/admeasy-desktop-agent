@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0-beta.10 — 2026-10-31
+
+- CI: exclude `live_network` tests from default pytest (founder invite expiry on production); fix Windows PyInstaller test venv paths.
+
 ## 0.5.0-beta.9 — 2026-10-31
 
 - Fix Windows UI hang: serve sign-in and static assets before API routes; preload HTML/JS; run backend proxy and chat history off-thread with 5s caps; stop blocking `/api/state` on Lightsail (cached devices/entitlements/install snippet).
