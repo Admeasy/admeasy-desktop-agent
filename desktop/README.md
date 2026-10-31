@@ -59,7 +59,7 @@ $env:ADMEASY_BACKEND = "https://admeasy-backend.6h5y8j39qxdcg.ap-south-1.cs.amaz
 python -m admeasy_desktop run
 ```
 
-The process prints `Admeasy is open at http://127.0.0.1:<port>/`. Sign in, grant the four permission rows, then the chat composer unlocks. `⋯` opens Profile, Connections, Employees, Automations, Connectors, Plan, Activity, and Notifications.
+The process prints `Admeasy is open at http://127.0.0.1:<port>/`. Sign in, grant the four permission rows, then the chat composer unlocks. `⋯` opens Profile, Connections, Workspace (employees, schedules, documents, vault, connectors), Automations, Plan, Activity, and Notifications.
 
 API reference (derived from live OpenAPI): [`../docs/DESKTOP_API.md`](../docs/DESKTOP_API.md).
 
@@ -72,7 +72,8 @@ Optional: `playwright install chromium` if Google Chrome is not installed.
 - **Chat.** History from `GET /conversations`. Send with `WSS /ws/session?token=<JWT>&client=desktop` (fragmented bubbles on `done` / `revision`).
 - **Pairing.** Connections mints a code via `POST /devices/pair-codes`; install scripts redeem with `POST /devices/pair/redeem`.
 - **Reminders.** `POST/GET/DELETE /reminders` plus tunnel `{type:"reminder"}` toasts. Web Push via `GET /push/vapid-public-key` and `POST /push/web` (client `desktop`).
-- **Employees & automations.** Same REST as the phone (`/employees`, `/me/triggers`, `POST /triggers/{id}`).
+- **Employees & automations.** Same REST as the phone (`/employees`, `/me/triggers`, `POST /triggers/{id}`). The **Workspace** hub also calls `/schedules`, `/kb/documents`, `/vault/overview`, and `/mcp/connectors/{slug}` when those routes are enabled on the backend.
+- **QA sign-in (web).** When the server has Resend OTP enabled, accounts listed in `TEST_LOGIN_EMAILS` can use password login on the web app without email OTP if the server is configured with `TEST_LOGIN_PASSWORD` (or `TEST_ADMEASY_ACCOUNT`). The desktop app still uses Google OAuth only.
 - **Permissions & folders.** Onboarding grants screen/accessibility/input/clipboard; Connections approves folder paths (not `/` or home).
 - **Shell links.** Chat notes can open `admeasy://run?job=<id>` in your terminal app.
 - **Phone.** Leave `python -m admeasy_desktop run` (or the service) running. The phone uses the same device tunnel as before.

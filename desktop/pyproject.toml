@@ -48,4 +48,4 @@ markers = [
 ]
 
 [tool.setuptools.package-data]
-admeasy_desktop = ["chromium_browsers.json", "ui/*"]
+admeasy_desktop = ["chromium_browsers.json", "ui/*", "ui/icons/hand/*.png"]

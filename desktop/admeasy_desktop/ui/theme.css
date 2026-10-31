@@ -296,3 +296,92 @@ code, .mono {
 @media (min-width: var(--bp-md)) {
   .screen-title { font-size: clamp(2rem, 4vw, 2.4rem); }
 }
+
+/* Workspace hub (aligned with admeasy web) */
+.hub-page { max-width: 1100px; margin: 0 auto; }
+.hub-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin: 0 auto 20px;
+  max-width: 960px;
+}
+.hub-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 0.92rem;
+  color: var(--ink);
+  font-weight: 700;
+}
+.hub-nav-link.active { border-color: var(--ink); font-weight: 800; }
+.hub-nav-link img { flex: none; }
+.hub-toolbar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.hub-toolbar select {
+  margin-left: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+.hub-split {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(280px, 1.2fr);
+  gap: 16px;
+  max-width: 960px;
+  margin: 0 auto;
+  width: 100%;
+}
+@media (max-width: 720px) {
+  .hub-split { grid-template-columns: 1fr; }
+}
+.hub-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.hub-list-btn {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  cursor: pointer;
+}
+.hub-list-btn.active { border-color: var(--ink); background: var(--lilac); }
+.hub-list-btn strong { display: block; }
+.hub-meta { display: block; font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
+.hub-detail { max-width: none; margin: 0; text-align: left; }
+.hub-detail-placeholder { max-width: 420px; margin: 24px auto; text-align: center; }
+.hub-pre { white-space: pre-wrap; font-family: inherit; font-size: 0.92rem; text-align: left; }
+.hub-runs { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.hub-upload input, .hub-upload textarea { margin-top: 4px; }
+.vault-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.vault-tile {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+.vault-tile img { border-radius: 8px; }
+.connector-detail details summary { cursor: pointer; font-weight: 800; margin: 8px 0; }

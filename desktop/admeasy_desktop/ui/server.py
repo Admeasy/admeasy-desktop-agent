@@ -21,7 +21,7 @@ from ..config import Settings
 from ..entitlements import EntitlementsAuthError, EntitlementsClient, EntitlementsError, InviteError
 from ..runtime import app_executable
 from ..log_buffer import tail
-from .paths import load_index_html, ui_file, validate_ui_bundle
+from .paths import load_index_html, ui_dir, ui_file, validate_ui_bundle
 
 
 class UiState:
@@ -243,6 +243,11 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
                 name, ctype = static[path]
                 asset = ui_file(name)
                 return self._bytes(asset.read_bytes(), ctype)
+            if path.startswith("/icons/hand/") and path.endswith(".png"):
+                rel = path.removeprefix("/")
+                asset = ui_dir() / rel
+                if asset.is_file():
+                    return self._bytes(asset.read_bytes(), "image/png")
             if path in ("/", "/index.html"):
                 html = load_index_html(state.token)
                 return self._bytes(html.encode("utf-8"), "text/html; charset=utf-8")

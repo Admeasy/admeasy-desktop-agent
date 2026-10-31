@@ -37,6 +37,24 @@ def handle_backend_get(state, name: str) -> dict | None:
         return client.request("GET", "/mcp/installed")
     if name == "mcp/catalog":
         return client.request("GET", "/mcp/catalog", auth_required=False)
+    if name == "schedules":
+        return client.request("GET", "/schedules")
+    if name.startswith("schedules/"):
+        sid = name.removeprefix("schedules/")
+        return client.request("GET", f"/schedules/{sid}", params={"run_limit": 40})
+    if name == "kb/documents":
+        return client.request("GET", "/kb/documents")
+    if name.startswith("kb/documents/"):
+        doc_id = name.removeprefix("kb/documents/")
+        return client.request("GET", f"/kb/documents/{doc_id}")
+    if name == "vault/overview":
+        return client.request("GET", "/vault/overview")
+    if name.startswith("mcp/connectors/"):
+        slug = name.removeprefix("mcp/connectors/")
+        return client.request("GET", f"/mcp/connectors/{slug}")
+    if name.startswith("mcp/connect/"):
+        slug = name.removeprefix("mcp/connect/")
+        return client.request("GET", "/mcp/connect", params={"slug": slug})
     return None
 
 
@@ -63,6 +81,11 @@ def handle_backend_post(state, name: str, body: dict) -> dict | None:
         return client.request("GET" if body.get("method") == "GET" else "POST", "/mcp/connect", json_body=body)
     if name == "pair-code":
         return client.request("POST", "/devices/pair-codes", json_body={"client": "desktop"})
+    if name == "kb/documents/upload":
+        return client.request("POST", "/kb/documents/upload", json_body=body)
+    if name.startswith("mcp/connectors/") and name.endswith("/reauth"):
+        slug = name.removeprefix("mcp/connectors/").removesuffix("/reauth")
+        return client.request("POST", f"/mcp/connectors/{slug}/reauth", json_body=body or {})
     return None
 
 
