@@ -25,11 +25,13 @@ class BackendClient:
         self.settings = settings
 
     def _token(self) -> str | None:
+        tok = auth.load_secret("access_token")
+        if tok:
+            return tok
         try:
-            refreshed = auth.refresh(self.base)
+            return auth.refresh(self.base)
         except Exception:
-            refreshed = None
-        return refreshed or auth.load_secret("access_token")
+            return None
 
     def headers(self) -> dict[str, str]:
         tok = self._token()
@@ -44,7 +46,7 @@ class BackendClient:
         *,
         json_body: dict | list | None = None,
         params: dict | None = None,
-        timeout: float = 20,
+        timeout: float = 5,
         auth_required: bool = True,
     ) -> Any:
         url = f"{self.base}{path if path.startswith('/') else '/' + path}"

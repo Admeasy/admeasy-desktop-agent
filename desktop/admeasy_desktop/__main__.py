@@ -39,20 +39,38 @@ def _html_ui_ready(body: str, code: int) -> bool:
 def _wait_for_html_ui(base_url: str) -> None:
     log = logging.getLogger("admeasy-desktop")
     last = "no response"
+    t0 = time.monotonic()
     for attempt in range(80):
+        t_req = time.monotonic()
         try:
             req = urllib.request.Request(base_url, headers={"Accept": "text/html,*/*"})
             with urllib.request.urlopen(req, timeout=0.5) as res:
                 code = getattr(res, "status", None) or res.getcode()
                 body = res.read(8192).decode("utf-8", errors="replace")
                 if _html_ui_ready(body, code):
+                    log.info(
+                        "UI probe OK %s status=%s in %.0fms (attempt %s)",
+                        base_url,
+                        code,
+                        (time.monotonic() - t0) * 1000,
+                        attempt + 1,
+                    )
                     return
                 last = f"HTTP {code} len={len(body)} head={body[:200]!r}"
         except Exception as exc:
             last = f"{type(exc).__name__}: {exc}"
+        if attempt in (0, 10, 20, 40, 79):
+            log.warning(
+                "UI probe waiting %s attempt=%s elapsed=%.0fms last=%s req_ms=%.0f",
+                base_url,
+                attempt + 1,
+                (time.monotonic() - t0) * 1000,
+                last,
+                (time.monotonic() - t_req) * 1000,
+            )
         time.sleep(0.05)
     msg = f"The UI server did not return the sign-in page ({last}). See {LOG_DIR / 'agent.log'}"
-    log.error("UI probe failed for %s: %s", base_url, last)
+    log.error("UI probe failed for %s after %.0fms: %s", base_url, (time.monotonic() - t0) * 1000, last)
     print(msg, file=sys.stderr, flush=True)
     raise RuntimeError(msg)
 
@@ -86,13 +104,52 @@ def _headless_ui_smoke(base_url: str) -> None:
     print("headless UI smoke OK", flush=True)
 
 
+def _headless_ui_stress(base_url: str) -> None:
+    """Simulate slow /api/state polls while / must stay fast (regression for UI hangs)."""
+    import concurrent.futures
+
+    port = base_url.rstrip("/").rsplit(":", 1)[-1]
+    root = f"http://127.0.0.1:{port}"
+    log = logging.getLogger("admeasy-desktop")
+
+    def slow_state():
+        try:
+            urllib.request.urlopen(root + "/api/state", timeout=10)
+        except Exception:
+            pass
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
+        for _ in range(24):
+            pool.submit(slow_state)
+        t0 = time.monotonic()
+        with urllib.request.urlopen(root + "/", timeout=2) as res:
+            body = res.read(8192).decode("utf-8", errors="replace")
+            code = getattr(res, "status", None) or res.getcode()
+        elapsed_ms = (time.monotonic() - t0) * 1000
+        if not _html_ui_ready(body, code):
+            raise RuntimeError(f"stress: / not ready HTTP {code}")
+        if elapsed_ms > 2000:
+            raise RuntimeError(f"stress: / took {elapsed_ms:.0f}ms with concurrent /api/state load")
+    log.info("headless UI stress OK (/%s in %.0fms under load)", root, elapsed_ms)
+    print("headless UI stress OK", flush=True)
+
+
 def cmd_run(background: bool) -> None:
     from admeasy_desktop.agent import Agent
     from admeasy_desktop.log_buffer import configure_logging
     from admeasy_desktop.ui.paths import load_index_html, validate_ui_bundle
     from admeasy_desktop.ui.server import UiState, serve
+    from admeasy_desktop.ui.single_instance import (
+        clear_registry,
+        handoff_to_running_instance,
+        try_acquire_primary,
+        write_registry,
+    )
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     configure_logging(str(LOG_DIR / "agent.log"))
+    if not os.environ.get("ADMEASY_ALLOW_SECOND_INSTANCE") and not try_acquire_primary():
+        if handoff_to_running_instance():
+            return
     s = Settings.load()
     if not CONFIG_PATH.exists():
         s.save()
@@ -121,66 +178,74 @@ def cmd_run(background: bool) -> None:
         system_hooks.set_autostart(True, app_executable())
     _srv, port = serve(ui)
     url = f"http://127.0.0.1:{port}/"
-    _wait_for_html_ui(url)
-    if os.environ.get("ADMEASY_HEADLESS_SMOKE"):
-        _headless_ui_smoke(url)
-        return
-    threading.Thread(target=lambda: asyncio.run(agent.tunnel()), daemon=True).start()
+    write_registry(port, ui.token)
     try:
-        httpx.get(f"{s.backend.rstrip('/')}/health", timeout=8).raise_for_status()
-    except Exception as exc:
-        logging.getLogger("admeasy-desktop").warning("backend health check failed (%s); UI will still open", exc)
-    print(f"Admeasy is open at {url}", flush=True)
-    from admeasy_desktop.reminders import Scheduler
+        _wait_for_html_ui(url)
+        if os.environ.get("ADMEASY_HEADLESS_SMOKE"):
+            _headless_ui_smoke(url)
+            if os.environ.get("ADMEASY_HEADLESS_SMOKE") == "stress":
+                _headless_ui_stress(url)
+            if os.environ.get("ADMEASY_HEADLESS_HOLD"):
+                threading.Event().wait()
+            return
+        threading.Thread(target=lambda: asyncio.run(agent.tunnel()), daemon=True).start()
+        try:
+            httpx.get(f"{s.backend.rstrip('/')}/health", timeout=8).raise_for_status()
+        except Exception as exc:
+            logging.getLogger("admeasy-desktop").warning("backend health check failed (%s); UI will still open", exc)
+        print(f"Admeasy is open at {url}", flush=True)
+        from admeasy_desktop.reminders import Scheduler
 
-    def _reminded(row: dict) -> None:
-        ui.chat._push({"type": "final", "bubbles": [str(row.get("text") or "reminder")]})
+        def _reminded(row: dict) -> None:
+            ui.chat._push({"type": "final", "bubbles": [str(row.get("text") or "reminder")]})
 
-    Scheduler(_reminded).start()
-    ui.chat.start()
+        Scheduler(_reminded).start()
+        ui.chat.start()
 
-    def set_paused(p: bool) -> None:
-        s.paused = p
-        s.save()
-        system_hooks.keep_awake(s.keep_awake and not s.paused)
+        def set_paused(p: bool) -> None:
+            s.paused = p
+            s.save()
+            system_hooks.keep_awake(s.keep_awake and not s.paused)
 
-    if background and auth.state()["signed_in"]:
-        from admeasy_desktop.tray import start_tray
-        start_tray(s.paused, set_paused, lambda: os._exit(0))
-        threading.Event().wait()
-        return
-    try:
-        import webview
+        if background and auth.state()["signed_in"]:
+            from admeasy_desktop.tray import start_tray
+            start_tray(s.paused, set_paused, lambda: os._exit(0))
+            threading.Event().wait()
+            return
+        try:
+            import webview
 
-        page_html = load_index_html(ui.token)
-        webview.create_window(
-            "Admeasy",
-            html=page_html,
-            url=url,
-            width=460,
-            height=720,
-            background_color="#f6f3ee",
-        )
-        webview.start()  # must own the main thread on macOS
-    except Exception as exc:
-        logging.getLogger("admeasy-desktop").warning("webview unavailable (%s), using browser", exc)
-        import webbrowser
+            page_html = load_index_html(ui.token)
+            webview.create_window(
+                "Admeasy",
+                html=page_html,
+                url=url,
+                width=460,
+                height=720,
+                background_color="#f6f3ee",
+            )
+            webview.start()  # must own the main thread on macOS
+        except Exception as exc:
+            logging.getLogger("admeasy-desktop").warning("webview unavailable (%s), using browser", exc)
+            import webbrowser
 
-        webbrowser.open(url)
-        if sys.platform == "win32" and frozen():
-            try:
-                import ctypes
+            webbrowser.open(url)
+            if sys.platform == "win32" and frozen():
+                try:
+                    import ctypes
 
-                ctypes.windll.user32.MessageBoxW(
-                    0,
-                    "Admeasy opened in your browser. Install Microsoft Edge WebView2 from "
-                    "https://go.microsoft.com/fwlink/p/?LinkId=2124703 and reinstall for the desktop window.",
-                    "Admeasy",
-                    0x40,
-                )
-            except Exception:
-                pass
-        threading.Event().wait()
+                    ctypes.windll.user32.MessageBoxW(
+                        0,
+                        "Admeasy opened in your browser. Install Microsoft Edge WebView2 from "
+                        "https://go.microsoft.com/fwlink/p/?LinkId=2124703 and reinstall for the desktop window.",
+                        "Admeasy",
+                        0x40,
+                    )
+                except Exception:
+                    pass
+            threading.Event().wait()
+    finally:
+        clear_registry()
 
 
 def cmd_click_test() -> int:

@@ -24,3 +24,14 @@ if ((Test-Path $log) -and (Select-String -Path $log -Pattern "Traceback" -Quiet)
   throw "traceback in agent.log"
 }
 Write-Host "frozen UI smoke OK ($Bin)"
+$env:ADMEASY_HEADLESS_SMOKE = "stress"
+& $Bin run
+Write-Host "frozen UI stress OK"
+$env:ADMEASY_HEADLESS_SMOKE = "1"
+$env:ADMEASY_HEADLESS_HOLD = "1"
+$p = Start-Process -FilePath $Bin -ArgumentList "run" -PassThru -NoNewWindow
+Start-Sleep -Seconds 2
+$out = & $Bin run 2>&1 | Out-String
+if ($out -notmatch "already running") { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; throw "second instance did not hand off: $out" }
+Write-Host "second instance handoff OK"
+Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue

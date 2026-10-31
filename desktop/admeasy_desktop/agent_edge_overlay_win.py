@@ -73,6 +73,7 @@ def _run_ui() -> None:
     try:
         import ctypes
         from ctypes import wintypes
+        from . import ctypes_win as cw
 
         user32 = ctypes.windll.user32
         gdi32 = ctypes.windll.gdi32
@@ -85,12 +86,12 @@ def _run_ui() -> None:
                 ("lpfnWndProc", WNDPROC),
                 ("cbClsExtra", ctypes.c_int),
                 ("cbWndExtra", ctypes.c_int),
-                ("hInstance", wintypes.HINSTANCE),
-                ("hIcon", wintypes.HICON),
-                ("hCursor", wintypes.HCURSOR),
-                ("hbrBackground", wintypes.HBRUSH),
-                ("lpszMenuName", wintypes.LPCWSTR),
-                ("lpszClassName", wintypes.LPCWSTR),
+                ("hInstance", cw.HINSTANCE),
+                ("hIcon", cw.HICON),
+                ("hCursor", cw.HCURSOR),
+                ("hbrBackground", cw.HBRUSH),
+                ("lpszMenuName", cw.LPCWSTR),
+                ("lpszClassName", cw.LPCWSTR),
             ]
 
         monitors: list[tuple[int, int, int, int]] = []

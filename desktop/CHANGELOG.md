@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0-beta.9 — 2026-10-31
+
+- Fix Windows UI hang: serve sign-in and static assets before API routes; preload HTML/JS; run backend proxy and chat history off-thread with 5s caps; stop blocking `/api/state` on Lightsail (cached devices/entitlements/install snippet).
+- Single-instance handoff when Admeasy is already running (mutex + ui-server.json); `/api/ping` and `/signin` aliases.
+- Windows overlay: define `HCURSOR`/`HBRUSH` via `HANDLE` when missing from `ctypes.wintypes`.
+- CI frozen smoke adds stress load + second-instance test; UI probe logs timing to agent.log.
+
 ## 0.5.0-beta.8 — 2026-10-31
 
 - Fix packaged app startup: the sign-in probe now reads enough HTML (Google Fonts in `<head>` pushed `id="app"` past the old 512-byte limit).

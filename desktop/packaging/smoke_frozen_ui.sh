@@ -24,3 +24,18 @@ if [ -f "$HOME_DIR/logs/agent.log" ] && grep -qi traceback "$HOME_DIR/logs/agent
   exit 1
 fi
 echo "frozen UI smoke OK ($BIN)"
+export ADMEASY_HEADLESS_SMOKE=stress
+"$BIN" run
+echo "frozen UI stress OK"
+ADMEASY_HEADLESS_SMOKE=1 ADMEASY_HEADLESS_HOLD=1 "$BIN" run &
+hold_pid=$!
+sleep 2
+if "$BIN" run | grep -qi "already running"; then
+  echo "second instance handoff OK"
+else
+  echo "second instance did not hand off" >&2
+  kill "$hold_pid" 2>/dev/null || true
+  exit 1
+fi
+kill "$hold_pid" 2>/dev/null || true
+wait "$hold_pid" 2>/dev/null || true

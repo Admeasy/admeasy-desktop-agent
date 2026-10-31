@@ -1,6 +1,7 @@
 """Extra local API used by the chat window. Existing invite/login routes stay in server.py."""
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 
@@ -18,33 +19,37 @@ GITHUB_SH = "https://raw.githubusercontent.com/Admeasy/admeasy-desktop-agent/mai
 GITHUB_PS1 = "https://raw.githubusercontent.com/Admeasy/admeasy-desktop-agent/main/desktop/packaging/install.ps1"
 
 
-def install_snippet(state) -> dict:
-    cached = getattr(state, "_install_cache", None)
-    if cached and (time.time() - cached[0]) < 60:
-        return cached[1]
+def _offline_install(state) -> dict:
+    backend = state.settings.backend
+    rel = VERSION
+    return {
+        "download_macos": f"https://github.com/Admeasy/admeasy-desktop-agent/releases/download/v{rel}/Admeasy-{rel}-macos-unsigned.dmg",
+        "download_windows": f"https://github.com/Admeasy/admeasy-desktop-agent/releases/download/v{rel}/Admeasy-{rel}-windows-unsigned.exe",
+        "releases_page": "https://github.com/Admeasy/admeasy-desktop-agent/releases/latest",
+        "macos": f"curl -fsSL {GITHUB_SH} | bash -s -- --backend {backend}",
+        "windows": f"$env:ADMEASY_BACKEND='{backend}'; irm {GITHUB_PS1} | iex",
+        "code": "",
+        "note": "Sign in first if you want a pairing code. The command still installs the helper.",
+        "platform": platform_name(),
+    }
+
+
+def refresh_install_snippet(state) -> None:
+    """Background refresh; never call from the HTTP handler thread."""
     backend = state.settings.backend
     code = ""
     try:
         client = BackendClient(state.settings)
-        r = client.request("POST", "/devices/pair-codes", json_body={"client": "desktop"}, timeout=8)
+        r = client.request("POST", "/devices/pair-codes", json_body={"client": "desktop"}, timeout=4)
         if isinstance(r, dict):
             code = str(r.get("code") or "")
-    except BackendError:
-        code = ""
     except Exception:
         code = ""
     pair = f" --pair {code}" if code else ""
-    note = (
-        "This code is single-use. The helper trades it for a device token on the same account."
-        if code else
-        "Sign in on this computer first to mint a pairing code, or run the one-liner and complete Google sign-in."
-    )
     rel = VERSION
-    dmg = f"https://github.com/Admeasy/admeasy-desktop-agent/releases/download/v{rel}/Admeasy-{rel}-macos-unsigned.dmg"
-    exe = f"https://github.com/Admeasy/admeasy-desktop-agent/releases/download/v{rel}/Admeasy-{rel}-windows-unsigned.exe"
     result = {
-        "download_macos": dmg,
-        "download_windows": exe,
+        "download_macos": f"https://github.com/Admeasy/admeasy-desktop-agent/releases/download/v{rel}/Admeasy-{rel}-macos-unsigned.dmg",
+        "download_windows": f"https://github.com/Admeasy/admeasy-desktop-agent/releases/download/v{rel}/Admeasy-{rel}-windows-unsigned.exe",
         "releases_page": "https://github.com/Admeasy/admeasy-desktop-agent/releases/latest",
         "macos": f"curl -fsSL {GITHUB_SH} | bash -s --{pair} --backend {backend}",
         "windows": (
@@ -61,7 +66,29 @@ def install_snippet(state) -> dict:
         "platform": platform_name(),
     }
     state._install_cache = (time.time(), result)
-    return result
+
+
+def install_snippet(state) -> dict:
+    cached = getattr(state, "_install_cache", None)
+    if cached and (time.time() - cached[0]) < 60:
+        return cached[1]
+    if cached:
+        threading.Thread(target=refresh_install_snippet, args=(state,), daemon=True).start()
+        return cached[1]
+    offline = _offline_install(state)
+    state._install_cache = (time.time(), offline)
+    threading.Thread(target=refresh_install_snippet, args=(state,), daemon=True).start()
+    return offline
+
+
+def install_snippet_legacy_blocking(state) -> dict:
+    """Tests only: previous blocking behaviour."""
+    cached = getattr(state, "_install_cache", None)
+    if cached and (time.time() - cached[0]) < 60:
+        return cached[1]
+    refresh_install_snippet(state)
+    cached = getattr(state, "_install_cache", None)
+    return cached[1] if cached else _offline_install(state)
 
 
 def asset_bytes(name: str) -> bytes | None:
@@ -174,7 +201,11 @@ def public_state(state, base: dict) -> dict:
         "onboarding_complete": bool(state.settings.onboarding_complete),
         "capabilities": toggles(state.settings),
         "folders": folder_roots(state.settings),
-        "reminders": list_reminders(state.settings, token),
+        "reminders": (
+            state._reminders_cache
+            if getattr(state, "_reminders_cache", None) is not None
+            else list_reminders(state.settings, token)
+        ),
         "audit": read_audit(40),
         "install": install_snippet(state) if base.get("signed_in") else {
             "macos": f"curl -fsSL {GITHUB_SH} | bash -s -- --backend {state.settings.backend}",

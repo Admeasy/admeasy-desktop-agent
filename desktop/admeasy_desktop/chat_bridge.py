@@ -97,11 +97,13 @@ class ChatBridge:
             return rows
 
     def _token(self) -> str | None:
+        tok = auth.load_secret("access_token")
+        if tok:
+            return tok
         try:
-            refreshed = auth.refresh(self.settings.backend)
+            return auth.refresh(self.settings.backend)
         except Exception:
-            refreshed = None
-        return refreshed or auth.load_secret("access_token")
+            return None
 
     def history(self) -> dict:
         token = self._token()
@@ -110,7 +112,7 @@ class ChatBridge:
         headers = {"Authorization": f"Bearer {token}"}
         base = self.settings.backend.rstrip("/")
         try:
-            listed = httpx.get(f"{base}/conversations", params={"limit": 30}, headers=headers, timeout=15)
+            listed = httpx.get(f"{base}/conversations", params={"limit": 30}, headers=headers, timeout=5)
         except Exception as exc:
             return {"messages": [], "conversation_id": self.conversation_id, "error": f"could not reach the backend: {exc}"}
         if listed.status_code == 401 and auth.refresh(self.settings.backend):
@@ -129,7 +131,7 @@ class ChatBridge:
                     f"{base}/conversations/{conv_id}/messages",
                     params={"limit": 40},
                     headers=headers,
-                    timeout=15,
+                    timeout=5,
                 )
             except Exception as exc:
                 return {"messages": [], "conversation_id": conv_id, "error": str(exc)}

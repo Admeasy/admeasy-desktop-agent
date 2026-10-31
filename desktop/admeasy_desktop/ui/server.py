@@ -6,8 +6,10 @@ import json
 import logging
 import platform
 import secrets
+import socketserver
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from pathlib import Path
 
 import httpx
@@ -20,11 +22,14 @@ from .backend_routes import backend_error_response, handle_backend_delete, handl
 from ..api import DEVICES_DISABLED, DEVICES_NOT_DEPLOYED, DevicesDisabledError, DevicesNotDeployedError, raise_for_devices
 from ..config import Settings
 from ..entitlements import EntitlementsAuthError, EntitlementsClient, EntitlementsError, InviteError
-from ..runtime import app_executable
 from ..log_buffer import tail
+from ..reminders import list_reminders
+from ..runtime import app_executable
 from .paths import load_index_html, ui_dir, ui_file, validate_ui_bundle
 
 _ui_log = logging.getLogger("admeasy-desktop.ui")
+_BACKEND_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ui-backend")
+_UI_REQUEST_TIMEOUT_S = 5.0
 
 
 class UiState:
@@ -38,28 +43,65 @@ class UiState:
         self._ent_cache = None
         self._ent_at = 0.0
         self._ent_error = ""
+        self._devices_cache: list = []
+        self._devices_at = 0.0
+        self._reminders_cache: list | None = None
+        self._reminders_at = 0.0
+        self._refresh_lock = threading.Lock()
+        self._refresh_scheduled = False
 
     def set_status(self, online: bool, detail: str) -> None:
         self.online, self.detail = online, detail
 
-    def devices(self) -> list:
+    def _schedule_remote_refresh(self) -> None:
+        with self._refresh_lock:
+            if self._refresh_scheduled:
+                return
+            self._refresh_scheduled = True
+        threading.Thread(target=self._refresh_remote_state, daemon=True, name="ui-remote-refresh").start()
+
+    def _refresh_remote_state(self) -> None:
+        try:
+            s = auth.state()
+            if s["signed_in"]:
+                self._load_entitlements(fresh=False)
+                self._devices_cache = self._fetch_devices()
+                self._devices_at = time.monotonic()
+                tok = auth.load_secret("access_token")
+                self._reminders_cache = list_reminders(self.settings, tok)
+                self._reminders_at = time.monotonic()
+        finally:
+            with self._refresh_lock:
+                self._refresh_scheduled = False
+
+    def _fetch_devices(self) -> list:
         tok = auth.load_secret("access_token")
         if not tok:
             return []
         try:
-            r = httpx.get(f"{self.settings.backend.rstrip('/')}/devices", headers={"Authorization": f"Bearer {tok}"}, timeout=8)
+            r = httpx.get(
+                f"{self.settings.backend.rstrip('/')}/devices",
+                headers={"Authorization": f"Bearer {tok}"},
+                timeout=4,
+            )
             if r.status_code == 401 and auth.refresh(self.settings.backend):
-                return self.devices()
+                return self._fetch_devices()
             raise_for_devices(r)
             return r.json().get("devices", []) if r.status_code == 200 else []
         except DevicesDisabledError:
             self.error = DEVICES_DISABLED
-            return []
+            return self._devices_cache
         except DevicesNotDeployedError:
             self.error = DEVICES_NOT_DEPLOYED
-            return []
+            return self._devices_cache
         except Exception:
-            return []
+            return self._devices_cache
+
+    def devices(self) -> list:
+        if self._devices_cache and (time.monotonic() - self._devices_at) < 30:
+            return self._devices_cache
+        self._schedule_remote_refresh()
+        return self._devices_cache
 
     def submit_invite(self, code: str) -> None:
         self.error = ""
@@ -157,7 +199,12 @@ class UiState:
             agent_ui = self.agent.session.public()
         else:
             agent_ui = {"agent_active": False, "agent_pulse": False}
-        snap = self._load_entitlements() if s["signed_in"] else None
+        snap = None
+        if s["signed_in"]:
+            snap = self._ent_cache
+            if snap is None:
+                snap = self._load_entitlements(fresh=False)
+            self._schedule_remote_refresh()
         invited = bool(snap and snap.invited)
         pending = auth.load_secret("pending_invite") or ""
         data = {
@@ -181,7 +228,18 @@ class UiState:
 
 
 def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
+    static_bytes: dict[str, bytes] = {}
+    for name in ("app.js", "theme.css", "sw.js", "manifest.webmanifest"):
+        static_bytes[name] = ui_file(name).read_bytes()
+    index_template = ui_file("index.html").read_text(encoding="utf-8")
+
+    class ThreadingUiServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+        daemon_threads = True
+        allow_reuse_address = True
+
     class H(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
         def log_message(self, *a):
             pass
 
@@ -189,6 +247,7 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
             b = json.dumps(obj).encode()
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(b)))
             self.end_headers()
             self.wfile.write(b)
 
@@ -205,6 +264,7 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
         def _bytes(self, data: bytes, content_type: str):
             self.send_response(200)
             self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(data)
@@ -223,18 +283,46 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
             path = self.path.split("?", 1)[0]
             if path in ("", "/"):
                 path = "/"
+            if path in ("/", "/index.html", "/signin"):
+                html = index_template.replace("__TOKEN__", state.token)
+                return self._bytes(html.encode("utf-8"), "text/html; charset=utf-8")
+            if path == "/api/ping":
+                return self._json({"ok": True, "ts": int(time.time())})
+            static = {
+                "/theme.css": ("theme.css", "text/css; charset=utf-8"),
+                "/app.js": ("app.js", "application/javascript; charset=utf-8"),
+                "/sw.js": ("sw.js", "application/javascript; charset=utf-8"),
+                "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+            }
+            if path in static:
+                name, ctype = static[path]
+                return self._bytes(static_bytes[name], ctype)
+            if path.startswith("/icons/hand/") and path.endswith(".png"):
+                rel = path.removeprefix("/")
+                asset = ui_dir() / rel
+                if asset.is_file():
+                    return self._bytes(asset.read_bytes(), "image/png")
+                return self._json({"error": "icon not found"}, 404)
             if path == "/api/state":
                 return self._json(state.snapshot())
             if path == "/api/logs":
                 return self._json({"lines": tail(150)})
             if path == "/api/chat/history":
-                return self._json(state.chat.history())
+                fut = _BACKEND_POOL.submit(state.chat.history)
+                try:
+                    return self._json(fut.result(timeout=_UI_REQUEST_TIMEOUT_S))
+                except FuturesTimeout:
+                    return self._json({"messages": [], "conversation_id": None, "error": "chat history timed out"}, 504)
             if path == "/api/live":
                 return self._json(live_payload(state))
             if path.startswith("/api/backend/"):
                 name = path.removeprefix("/api/backend/").strip("/")
                 try:
-                    payload = handle_backend_get(state, name)
+                    fut = _BACKEND_POOL.submit(handle_backend_get, state, name)
+                    payload = fut.result(timeout=_UI_REQUEST_TIMEOUT_S)
+                except FuturesTimeout:
+                    body, code = backend_error_response(BackendError("backend request timed out", 504))
+                    return self._json(body, code)
                 except BackendError as exc:
                     body, code = backend_error_response(exc)
                     return self._json(body, code)
@@ -246,30 +334,15 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
                 if blob is None:
                     return self._json({"error": "installer missing"}, 404)
                 return self._bytes(blob, "text/plain; charset=utf-8")
-            static = {
-                "/theme.css": ("theme.css", "text/css; charset=utf-8"),
-                "/app.js": ("app.js", "application/javascript; charset=utf-8"),
-                "/sw.js": ("sw.js", "application/javascript; charset=utf-8"),
-                "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
-            }
-            if path in static:
-                name, ctype = static[path]
-                asset = ui_file(name)
-                return self._bytes(asset.read_bytes(), ctype)
-            if path.startswith("/icons/hand/") and path.endswith(".png"):
-                rel = path.removeprefix("/")
-                asset = ui_dir() / rel
-                if asset.is_file():
-                    return self._bytes(asset.read_bytes(), "image/png")
-                return self._json({"error": "icon not found"}, 404)
-            if path in ("/", "/index.html"):
-                html = load_index_html(state.token)
-                return self._bytes(html.encode("utf-8"), "text/html; charset=utf-8")
             return self._json({"error": "not found"}, 404)
 
         def _backend_write(self, route: str, body: dict | None = None):
             try:
-                payload = handle_backend_post(state, route, body or {})
+                fut = _BACKEND_POOL.submit(handle_backend_post, state, route, body or {})
+                payload = fut.result(timeout=_UI_REQUEST_TIMEOUT_S)
+            except FuturesTimeout:
+                b, code = backend_error_response(BackendError("backend request timed out", 504))
+                return self._json(b, code)
             except BackendError as exc:
                 b, code = backend_error_response(exc)
                 return self._json(b, code)
@@ -285,7 +358,11 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
                 return self._json({"error": "not found"}, 404)
             route = name.removeprefix("backend/").strip("/")
             try:
-                payload = handle_backend_delete(state, route)
+                fut = _BACKEND_POOL.submit(handle_backend_delete, state, route)
+                payload = fut.result(timeout=_UI_REQUEST_TIMEOUT_S)
+            except FuturesTimeout:
+                b, code = backend_error_response(BackendError("backend request timed out", 504))
+                return self._json(b, code)
             except BackendError as exc:
                 b, code = backend_error_response(exc)
                 return self._json(b, code)
@@ -335,7 +412,7 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
                 system_hooks.set_autostart(state.settings.start_at_login)
             return self._json({"ok": True})
 
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
+    srv = ThreadingUiServer(("127.0.0.1", port), H)
 
     def _serve_forever() -> None:
         try:
