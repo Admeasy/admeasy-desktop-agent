@@ -30,7 +30,16 @@ Write-Host "frozen UI stress OK"
 $env:ADMEASY_HEADLESS_SMOKE = "1"
 $env:ADMEASY_HEADLESS_HOLD = "1"
 $p = Start-Process -FilePath $Bin -ArgumentList "run" -PassThru -NoNewWindow
-Start-Sleep -Seconds 2
+$reg = Join-Path $HomeDir "ui-server.json"
+for ($i = 0; $i -lt 120; $i++) {
+  if ((Test-Path $reg)) { break }
+  Start-Sleep -Milliseconds 500
+}
+if (-not (Test-Path $reg)) {
+  Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+  throw "primary ui-server.json never appeared under $HomeDir"
+}
+Remove-Item Env:ADMEASY_HEADLESS_HOLD -ErrorAction SilentlyContinue
 & $Bin run | Out-Null
 Start-Sleep -Seconds 1
 if (-not (Select-String -Path $log -Pattern "handed off to existing Admeasy UI" -Quiet)) {

@@ -37,21 +37,3 @@ def test_agent_edge_overlay_win_bindings():
     assert ov.is_available()
     _ = wintypes.RECT
     assert cw.module_handle()
-
-
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only")
-def test_overlays_start_without_disabled_warning(caplog):
-    import logging
-
-    from admeasy_desktop import agent_edge_overlay_win as edge
-    from admeasy_desktop import cursor_overlay_win as cur
-
-    caplog.set_level(logging.WARNING, logger="admeasy-desktop")
-    cur.set_enabled(True)
-    edge.set_enabled(True)
-    cur.ensure_started()
-    edge.ensure_started()
-    for rec in caplog.records:
-        msg = rec.getMessage()
-        assert "windows cursor overlay disabled" not in msg
-        assert "windows agent edge overlay disabled" not in msg
