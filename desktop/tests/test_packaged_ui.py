@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from admeasy_desktop.__main__ import _html_ui_ready
 from admeasy_desktop.config import Settings
 from admeasy_desktop.ui.server import UiState, serve
 
@@ -36,6 +37,7 @@ def pyinstaller_dist(tmp_path_factory):
     )
     internal = dist / "Admeasy" / "_internal"
     assert (internal / "admeasy_desktop" / "ui" / "index.html").is_file()
+    assert (internal / "admeasy_desktop" / "ui" / "icons" / "hand" / "01-computer.png").is_file()
     return internal
 
 
@@ -50,8 +52,10 @@ def test_frozen_http_serves_html_not_js(pyinstaller_dist, monkeypatch):
         with urllib.request.urlopen(base + "/") as res:
             html = res.read().decode()
             assert res.headers.get_content_type() == "text/html"
-            assert "<!doctype html" in html.lower()
-            assert 'id="app"' in html
+            assert _html_ui_ready(html, res.status)
+        with urllib.request.urlopen(base + "/icons/hand/01-computer.png") as res:
+            assert res.headers.get_content_type() == "image/png"
+            assert len(res.read()) > 100
         with urllib.request.urlopen(base + "/app.js") as res:
             assert res.headers.get_content_type() == "application/javascript"
             head = res.read(40).decode()

@@ -34,4 +34,7 @@ def validate_ui_bundle() -> list[str]:
     for name in required:
         if not (root / name).is_file():
             missing.append(str(root / name))
+    icon = root / "icons" / "hand" / "01-computer.png"
+    if not icon.is_file():
+        missing.append(str(icon))
     return missing

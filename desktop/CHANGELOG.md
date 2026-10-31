@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0-beta.8 — 2026-10-31
+
+- Fix packaged app startup: the sign-in probe now reads enough HTML (Google Fonts in `<head>` pushed `id="app"` past the old 512-byte limit).
+- Start the device tunnel only after the loopback UI is verified; improve UI probe logging and HTTP handler error isolation.
+- CI: frozen-binary headless smoke (`ADMEASY_HEADLESS_SMOKE`) on Linux, macOS, and Windows.
+
 ## 0.5.0-beta.7 — 2026-10-31
 
 - Workspace hub in the desktop window: AI employees, scheduled work, documents, vault, and MCP connectors (list/detail UX aligned with the web app).

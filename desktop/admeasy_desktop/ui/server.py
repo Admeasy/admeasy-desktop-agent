@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import http.server
 import json
+import logging
 import platform
 import secrets
 import threading
@@ -22,6 +23,8 @@ from ..entitlements import EntitlementsAuthError, EntitlementsClient, Entitlemen
 from ..runtime import app_executable
 from ..log_buffer import tail
 from .paths import load_index_html, ui_dir, ui_file, validate_ui_bundle
+
+_ui_log = logging.getLogger("admeasy-desktop.ui")
 
 
 class UiState:
@@ -207,6 +210,16 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
             self.wfile.write(data)
 
         def do_GET(self):
+            try:
+                self._do_get()
+            except Exception:
+                _ui_log.exception("GET %s failed", self.path)
+                try:
+                    self._json({"error": "internal error"}, 500)
+                except Exception:
+                    pass
+
+        def _do_get(self):
             path = self.path.split("?", 1)[0]
             if path in ("", "/"):
                 path = "/"
@@ -248,6 +261,7 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
                 asset = ui_dir() / rel
                 if asset.is_file():
                     return self._bytes(asset.read_bytes(), "image/png")
+                return self._json({"error": "icon not found"}, 404)
             if path in ("/", "/index.html"):
                 html = load_index_html(state.token)
                 return self._bytes(html.encode("utf-8"), "text/html; charset=utf-8")
@@ -322,5 +336,12 @@ def serve(state: UiState, port: int = 0) -> tuple[http.server.HTTPServer, int]:
             return self._json({"ok": True})
 
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+    def _serve_forever() -> None:
+        try:
+            srv.serve_forever()
+        except Exception:
+            _ui_log.exception("UI HTTP server stopped")
+
+    threading.Thread(target=_serve_forever, daemon=True).start()
     return srv, srv.server_address[1]

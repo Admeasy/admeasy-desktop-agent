@@ -19,8 +19,21 @@ jobs:
         working-directory: desktop
       - run: python -m pytest -q tests
         working-directory: desktop
-      - name: Packaged UI smoke (PyInstaller onedir)
+      - name: Packaged UI smoke (in-process PyInstaller layout)
+        if: runner.os != 'Windows'
         run: bash packaging/smoke_packaged_ui.sh
+        working-directory: desktop
+      - name: Frozen binary headless UI smoke
+        if: runner.os == 'Linux'
+        run: bash packaging/smoke_frozen_ui.sh
+        working-directory: desktop
+      - name: Frozen binary headless UI smoke (Windows)
+        if: runner.os == 'Windows'
+        run: powershell -ExecutionPolicy Bypass -File packaging/smoke_frozen_ui.ps1
+        working-directory: desktop
+      - name: Frozen binary headless UI smoke (macOS)
+        if: runner.os == 'macOS'
+        run: bash packaging/smoke_frozen_ui.sh
         working-directory: desktop
   macos:
     needs: test

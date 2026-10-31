@@ -27,17 +27,63 @@ from admeasy_desktop.config import CONFIG_PATH, LOG_DIR, Settings, platform_name
 from admeasy_desktop.runtime import app_executable, frozen
 
 
+def _html_ui_ready(body: str, code: int) -> bool:
+    if code != 200:
+        return False
+    low = body.lower()
+    if "<!doctype html" not in low and "<html" not in low:
+        return False
+    return 'id="app"' in body or "starting admeasy" in low or "admeasy-ui-root" in body
+
+
 def _wait_for_html_ui(base_url: str) -> None:
-    for _ in range(80):
+    log = logging.getLogger("admeasy-desktop")
+    last = "no response"
+    for attempt in range(80):
         try:
-            with urllib.request.urlopen(base_url, timeout=0.25) as res:
-                body = res.read(512).decode("utf-8", errors="replace")
-                if res.status == 200 and "<!doctype html" in body.lower() and "id=\"app\"" in body:
+            req = urllib.request.Request(base_url, headers={"Accept": "text/html,*/*"})
+            with urllib.request.urlopen(req, timeout=0.5) as res:
+                code = getattr(res, "status", None) or res.getcode()
+                body = res.read(8192).decode("utf-8", errors="replace")
+                if _html_ui_ready(body, code):
                     return
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
-            pass
+                last = f"HTTP {code} len={len(body)} head={body[:200]!r}"
+        except Exception as exc:
+            last = f"{type(exc).__name__}: {exc}"
         time.sleep(0.05)
-    raise RuntimeError("The UI server did not return the sign-in page. See ~/.admeasy/logs/agent.log")
+    msg = f"The UI server did not return the sign-in page ({last}). See {LOG_DIR / 'agent.log'}"
+    log.error("UI probe failed for %s: %s", base_url, last)
+    print(msg, file=sys.stderr, flush=True)
+    raise RuntimeError(msg)
+
+
+def _headless_ui_smoke(base_url: str) -> None:
+    """Packaged-build CI: verify core UI assets before webview opens."""
+    log = logging.getLogger("admeasy-desktop")
+    port = base_url.rstrip("/").rsplit(":", 1)[-1]
+    root = f"http://127.0.0.1:{port}"
+    paths = [
+        ("/", lambda code, body, ctype: _html_ui_ready(body, code)),
+        ("/icons/hand/01-computer.png", lambda code, body, ctype: code == 200 and ctype.startswith("image/")),
+        ("/app.js", lambda code, body, ctype: code == 200 and body.lstrip().startswith("const token")),
+        ("/api/state", lambda code, body, ctype: code == 200 and "settings" in body),
+        ("/api/backend/mcp/catalog", lambda code, body, ctype: code in (200, 401, 403)),
+    ]
+    for path, ok in paths:
+        url = root + path
+        try:
+            with urllib.request.urlopen(url, timeout=5) as res:
+                body = res.read(65536).decode("utf-8", errors="replace")
+                code = getattr(res, "status", None) or res.getcode()
+                ctype = res.headers.get_content_type()
+        except urllib.error.HTTPError as exc:
+            body = exc.read(8192).decode("utf-8", errors="replace")
+            code = exc.code
+            ctype = exc.headers.get_content_type()
+        if not ok(code, body, ctype):
+            raise RuntimeError(f"headless smoke failed for {path}: HTTP {code} type={ctype} body={body[:200]!r}")
+        log.info("headless smoke OK %s", path)
+    print("headless UI smoke OK", flush=True)
 
 
 def cmd_run(background: bool) -> None:
@@ -73,10 +119,13 @@ def cmd_run(background: bool) -> None:
         s.start_at_login = True
         s.save()
         system_hooks.set_autostart(True, app_executable())
-    threading.Thread(target=lambda: asyncio.run(agent.tunnel()), daemon=True).start()
     _srv, port = serve(ui)
     url = f"http://127.0.0.1:{port}/"
     _wait_for_html_ui(url)
+    if os.environ.get("ADMEASY_HEADLESS_SMOKE"):
+        _headless_ui_smoke(url)
+        return
+    threading.Thread(target=lambda: asyncio.run(agent.tunnel()), daemon=True).start()
     try:
         httpx.get(f"{s.backend.rstrip('/')}/health", timeout=8).raise_for_status()
     except Exception as exc:
