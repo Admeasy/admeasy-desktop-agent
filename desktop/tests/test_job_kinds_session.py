@@ -148,13 +148,30 @@ def test_session_kinds_subset_of_job_kinds():
 async def test_cancel_all_cancels_queued_job(monkeypatch, tmp_path):
     got: list[dict] = []
     proceed = asyncio.Event()
+    results_ready = asyncio.Event()
 
     async def backend(ws):
         await ws.recv()
-        await ws.send(json.dumps({"type": "task", "job_id": "slow", "kind": "shell",
-                                  "params": {"command": "sleep 3 && echo slow"}}))
-        await ws.send(json.dumps({"type": "task", "job_id": "queued", "kind": "shell",
-                                  "params": {"command": "echo q"}}))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "task",
+                    "job_id": "slow",
+                    "kind": "shell",
+                    "params": {"command": 'python -c "import time; time.sleep(3)"'},
+                }
+            )
+        )
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "task",
+                    "job_id": "queued",
+                    "kind": "shell",
+                    "params": {"command": 'python -c "print(1)"'},
+                }
+            )
+        )
         await asyncio.sleep(0.3)
         await ws.send(json.dumps({"type": "cancel_all"}))
         proceed.set()
@@ -162,6 +179,7 @@ async def test_cancel_all_cancels_queued_job(monkeypatch, tmp_path):
             m = json.loads(await ws.recv())
             if m.get("type") == "result":
                 got.append(m)
+        results_ready.set()
 
     async with websockets.serve(backend, "127.0.0.1", 0) as srv:
         port = srv.sockets[0].getsockname()[1]
@@ -170,8 +188,10 @@ async def test_cancel_all_cancels_queued_job(monkeypatch, tmp_path):
         agent = agent_mod.Agent(s)
         tunnel = asyncio.create_task(agent.tunnel())
         await asyncio.wait_for(proceed.wait(), 10)
-        await asyncio.sleep(2)
+        await asyncio.wait_for(results_ready.wait(), 15)
         tunnel.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await tunnel
     statuses = {m["job_id"]: m["status"] for m in got}
     assert statuses.get("queued") == "cancelled"
     assert statuses.get("slow") in ("cancelled", "ok", "error", "blocked")
