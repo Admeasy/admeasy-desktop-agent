@@ -29,7 +29,17 @@ export ADMEASY_HEADLESS_SMOKE=stress
 echo "frozen UI stress OK"
 ADMEASY_HEADLESS_SMOKE=1 ADMEASY_HEADLESS_HOLD=1 "$BIN" run &
 hold_pid=$!
-sleep 2
+reg="$HOME_DIR/ui-server.json"
+for _ in $(seq 1 120); do
+  test -f "$reg" && break
+  sleep 0.5
+done
+if ! test -f "$reg"; then
+  echo "primary ui-server.json never appeared" >&2
+  kill "$hold_pid" 2>/dev/null || true
+  exit 1
+fi
+unset ADMEASY_HEADLESS_HOLD
 "$BIN" run >/dev/null 2>&1 || true
 sleep 1
 if grep -qi "handed off to existing Admeasy UI" "$HOME_DIR/logs/agent.log"; then
