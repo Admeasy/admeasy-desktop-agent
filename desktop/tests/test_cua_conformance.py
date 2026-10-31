@@ -42,6 +42,7 @@ async def test_instagram_flow_six_distinct_screenshots(monkeypatch):
     })
     monkeypatch.setattr("admeasy_desktop.ui_settle.wait_for_settle", lambda *a, **k: 0.0)
     monkeypatch.setattr("admeasy_desktop.executors.screen._pg", lambda: MagicMock(size=lambda: (1440, 900)))
+    monkeypatch.setattr("admeasy_desktop.input_darwin.accessibility_trusted", lambda: True)
 
     for step in steps:
         out = await agent.dispatch(f"j{len(hashes)}", "cua", {"action": step["action"]})

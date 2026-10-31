@@ -35,6 +35,7 @@ async def test_cua_screenshot_after_click_action(monkeypatch):
         lambda: MagicMock(size=lambda: (1440, 900)),
     )
     monkeypatch.setattr("admeasy_desktop.executors.screen.Scaler", lambda a, b: MagicMock())
+    monkeypatch.setattr("admeasy_desktop.input_darwin.accessibility_trusted", lambda: True)
 
     out = await a.dispatch("j1", "cua", {"action": {"type": "click", "element_id": 3}})
     assert out["status"] == "ok"
