@@ -88,6 +88,8 @@ class Session:
     focus_for: str = ""
     tool_facts: list = field(default_factory=list)  # evidence from tools in the current turn
     plan: str = "free"  # billing plan; enables Groq failover when the primary LLM fails
+    # Connector / vault / live-session summary for structured routing (_structured_plan in agent_impl).
+    live_state_block: str = ""
 
 
 class TurnState(TypedDict):
