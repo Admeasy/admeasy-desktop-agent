@@ -1,0 +1,22 @@
+--- a/backend/app/agent_impl.py
++++ b/backend/app/agent_impl.py
+@@ -873,7 +873,7 @@
+         ...,
+         policy_text=policy_text,
+-        access_summary=session.live_state_block or "",
++        access_summary=getattr(session, "live_state_block", "") or "",
+         ...
+     )
+
+--- a/backend/app/session.py
++++ b/backend/app/session.py
+@@ -1,6 +1,7 @@
+ @dataclass
+ class Session:
+     ...
++    live_state_block: str = ""  # connector/vault summary for _structured_plan
+
+If Session lives in agent_impl.py instead of session.py, add the same field on that dataclass.
+
+Optional: populate in _build_v2 before _structured_plan:
+    session.live_state_block = getattr(session, "live_state_block", "") or ""
