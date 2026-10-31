@@ -27,12 +27,17 @@ from admeasy_desktop.config import CONFIG_PATH, LOG_DIR, Settings, platform_name
 from admeasy_desktop.runtime import app_executable, frozen
 
 
+_UI_READY_READ_BYTES = 8192
+
+
 def _wait_for_html_ui(base_url: str) -> None:
+    """Poll loopback / until index.html is served (fonts in <head> can exceed 512 B)."""
     for _ in range(80):
         try:
             with urllib.request.urlopen(base_url, timeout=0.25) as res:
-                body = res.read(512).decode("utf-8", errors="replace")
-                if res.status == 200 and "<!doctype html" in body.lower() and "id=\"app\"" in body:
+                code = getattr(res, "status", None) or res.getcode()
+                body = res.read(_UI_READY_READ_BYTES).decode("utf-8", errors="replace")
+                if code == 200 and "<!doctype html" in body.lower() and 'id="app"' in body:
                     return
         except (urllib.error.URLError, TimeoutError, OSError, ValueError):
             pass
