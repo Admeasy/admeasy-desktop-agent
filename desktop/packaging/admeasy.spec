@@ -38,7 +38,7 @@ if sys.platform == "darwin":
         "admeasy_desktop.screen_coords_mac",
     ]
 if sys.platform == "win32":
-    hidden += ["admeasy_desktop.cursor_overlay_win"]
+    hidden += ["admeasy_desktop.cursor_overlay_win", "admeasy_desktop.agent_edge_overlay_win"]
 
 ui_tree = os.path.join(root, "admeasy_desktop", "ui")
 datas = [

@@ -3,6 +3,8 @@
 ## 0.5.0-beta.10 — 2026-10-31
 
 - CI: exclude `live_network` tests from default pytest (founder invite expiry on production); fix Windows PyInstaller test venv paths.
+- Windows overlays: import `wintypes` in cursor overlay; resolve `GetModuleHandleW` via `kernel32` (not `user32`).
+- Frozen smoke: detect second-instance handoff via `agent.log` (windowed `.exe` has no stdout).
 
 ## 0.5.0-beta.9 — 2026-10-31
 

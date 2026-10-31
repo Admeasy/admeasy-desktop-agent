@@ -46,6 +46,8 @@ def _run_ui() -> None:
     global _hwnd
     try:
         import ctypes
+        from ctypes import wintypes
+
         from . import ctypes_win as cw
 
         user32 = ctypes.windll.user32
@@ -91,7 +93,7 @@ def _run_ui() -> None:
         wc = WNDCLASSW()
         wc.lpfnWndProc = proc
         wc.lpszClassName = "AdmeasyCursorOverlay"
-        wc.hInstance = user32.GetModuleHandleW(None)
+        wc.hInstance = cw.module_handle()
         if not user32.RegisterClassW(ctypes.byref(wc)):
             pass
         hwnd = user32.CreateWindowExW(

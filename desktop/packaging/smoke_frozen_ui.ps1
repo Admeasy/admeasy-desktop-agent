@@ -31,7 +31,12 @@ $env:ADMEASY_HEADLESS_SMOKE = "1"
 $env:ADMEASY_HEADLESS_HOLD = "1"
 $p = Start-Process -FilePath $Bin -ArgumentList "run" -PassThru -NoNewWindow
 Start-Sleep -Seconds 2
-$out = & $Bin run 2>&1 | Out-String
-if ($out -notmatch "already running") { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; throw "second instance did not hand off: $out" }
+& $Bin run | Out-Null
+Start-Sleep -Seconds 1
+if (-not (Select-String -Path $log -Pattern "handed off to existing Admeasy UI" -Quiet)) {
+  Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+  Get-Content $log -Tail 40
+  throw "second instance did not hand off (see agent.log)"
+}
 Write-Host "second instance handoff OK"
 Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue

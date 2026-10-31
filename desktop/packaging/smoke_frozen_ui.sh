@@ -30,10 +30,13 @@ echo "frozen UI stress OK"
 ADMEASY_HEADLESS_SMOKE=1 ADMEASY_HEADLESS_HOLD=1 "$BIN" run &
 hold_pid=$!
 sleep 2
-if "$BIN" run | grep -qi "already running"; then
+"$BIN" run >/dev/null 2>&1 || true
+sleep 1
+if grep -qi "handed off to existing Admeasy UI" "$HOME_DIR/logs/agent.log"; then
   echo "second instance handoff OK"
 else
   echo "second instance did not hand off" >&2
+  tail -40 "$HOME_DIR/logs/agent.log" >&2 || true
   kill "$hold_pid" 2>/dev/null || true
   exit 1
 fi

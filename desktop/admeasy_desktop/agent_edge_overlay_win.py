@@ -141,7 +141,7 @@ def _run_ui() -> None:
         wc = WNDCLASSW()
         wc.lpfnWndProc = proc
         wc.lpszClassName = "AdmeasyEdgeOverlay"
-        wc.hInstance = user32.GetModuleHandleW(None)
+        wc.hInstance = cw.module_handle()
         user32.RegisterClassW(ctypes.byref(wc))
 
         hwnds = []
