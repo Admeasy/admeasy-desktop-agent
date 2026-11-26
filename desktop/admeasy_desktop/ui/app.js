@@ -10,22 +10,67 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
 
 const HUB_NAV = [
   { id: "employees", label: "AI employees", icon: "11-bot" },
-  { id: "schedules", label: "scheduled work", icon: "18-info" },
-  { id: "documents", label: "documents", icon: "15-panel" },
-  { id: "vault", label: "vault", icon: "16-settings" },
-  { id: "connectors", label: "connectors", icon: "02-app-grid" },
+  { id: "schedules", label: "Schedules", icon: "18-info" },
+  { id: "documents", label: "Documents", icon: "15-panel" },
+  { id: "vault", label: "Vault", icon: "17-vault" },
+  { id: "connectors", label: "Connectors", icon: "02-app-grid" },
 ];
+const QUICK_PROMPTS = [
+  "Summarise my unread emails",
+  "What's on my calendar today?",
+  "Draft a follow-up email for me",
+  "Remind me what I should focus on today",
+];
+const HELP_URL = "https://admeasy.ai";
 const hubIcon = (name) => `/icons/hand/${name}.png`;
 const WORKSPACE_SCREENS = new Set(HUB_NAV.map((h) => h.id));
 let wsPick = { employees: "", schedules: "", documents: "", connectors: "" };
 let wsFilter = { employees: "all", schedules: "all", documents: "all" };
 
 function hubNavHtml(active) {
-  return `<nav class="hub-nav" aria-label="workspace">${HUB_NAV.map((h) =>
+  return `<div class="hub-nav-scroll"><nav class="hub-nav" aria-label="workspace">${HUB_NAV.map((h) =>
     `<button type="button" class="hub-nav-link${active === h.id ? " active" : ""}" data-go="${esc(h.id)}">
-      <img src="${hubIcon(h.icon)}" width="22" height="22" alt="">
+      <img src="${hubIcon(h.icon)}" width="18" height="18" alt="">
       <span>${esc(h.label)}</span>
-    </button>`).join("")}</nav>`;
+    </button>`).join("")}</nav></div>`;
+}
+
+function linkStatusLabel() {
+  if (!state) return "link off";
+  if (state.settings && state.settings.paused) return "paused";
+  return state.online ? "link on" : "link off";
+}
+
+function linkStatusOn() {
+  return state && state.online && !(state.settings && state.settings.paused);
+}
+
+function topBarHtml() {
+  const on = linkStatusOn();
+  return `<header class="top">
+    <div class="brand"><span class="brand-name">admeasy</span></div>
+    <div class="top-actions">
+      <button type="button" class="icon-btn icon-btn-ghost" id="help" aria-label="help">
+        <img src="${hubIcon("18-info")}" width="20" height="20" alt="">
+      </button>
+      <a class="icon-btn icon-btn-ghost" href="${HELP_URL}" target="_blank" rel="noreferrer" aria-label="admeasy on the web">
+        <span class="pill-wa keep-case" style="font-size:11px;font-weight:800">wa</span>
+      </a>
+      <span class="status-pill${on ? " on" : ""}" title="phone link to this computer">
+        <span class="dot ${on ? "on" : "off"}"></span>${esc(linkStatusLabel())}
+      </span>
+      <button type="button" class="icon-btn icon-btn-ghost" id="settings-go" aria-label="settings">
+        <img src="${hubIcon("16-settings")}" width="20" height="20" alt="">
+      </button>
+    </div>
+  </header>`;
+}
+
+function bindTopBar() {
+  const help = document.getElementById("help");
+  if (help) help.onclick = () => { window.open(HELP_URL, "_blank", "noopener,noreferrer"); };
+  const settingsGo = document.getElementById("settings-go");
+  if (settingsGo) settingsGo.onclick = () => { screen = "settings"; draw(); };
 }
 
 function schedulePhase(task) {
@@ -38,14 +83,16 @@ function schedulePhase(task) {
 
 function workspaceShell(active, title, body, errId = "") {
   shell(`
-    <button class="back" id="back">← chat</button>
     <div class="hub-page">
       ${hubNavHtml(active)}
       <h2 class="screen-title">${esc(title)}</h2>
       ${body}
       ${errId ? `<p class="err" id="${errId}"></p>` : ""}
-    </div>`);
-  document.getElementById("back").onclick = () => { screen = "chat"; draw(); };
+      <div class="sheet-footer">
+        <button type="button" class="btn btn-light btn-block" id="workspace-close">close</button>
+      </div>
+    </div>`, { settings: false });
+  document.getElementById("workspace-close").onclick = () => { screen = "chat"; draw(); };
 }
 
 async function api(path, body, method) {
@@ -64,39 +111,23 @@ async function api(path, body, method) {
 }
 
 let screen = "chat";
-let menuOpen = false;
 let state = null;
 let bubbles = [];
 let live = "";
 const seenNotes = new Set();
 
 function shell(inner, opts = {}) {
-  const online = state && state.online;
   const chatClass = opts.chat ? " screen is-chat" : "";
+  const settingsClass = opts.settings ? " screen-settings" : "";
+  const heroClass = opts.hero ? " chat-with-hero" : "";
   document.getElementById("app").replaceChildren($(`
     <div class="app">
-      <header class="top">
-        <div class="brand">
-          <span class="mascot"><img src="https://admeasy.ai/mascot.svg" width="30" height="30" alt=""></span>
-          <span class="brand-name">admeasy</span>
-          <span class="dot ${online ? "on" : "off"}" title="${online ? "computer connected" : "computer offline"}"></span>
-        </div>
-        <button class="icon-btn" id="more" aria-label="menu">⋯</button>
-      </header>
-      ${menuOpen ? `<nav class="menu" id="menu">
-        <button data-go="profile">profile</button>
-        <button data-go="connections">connections</button>
-        <button data-go="employees">workspace</button>
-        <button data-go="automations">automations</button>
-        <button data-go="plan">plan</button>
-        <button data-go="activity">activity</button>
-        <button data-go="reminders">notifications</button>
-      </nav>` : ""}
-      <div class="screen${chatClass}">${inner}</div>
+      ${topBarHtml()}
+      <div class="screen${chatClass}${settingsClass}${heroClass}">${inner}</div>
     </div>`));
-  document.getElementById("more").onclick = () => { menuOpen = !menuOpen; draw(); };
+  bindTopBar();
   document.querySelectorAll("[data-go]").forEach((b) => {
-    b.onclick = () => { screen = b.dataset.go; menuOpen = false; draw(); };
+    b.onclick = () => { screen = b.dataset.go; draw(); };
   });
 }
 
@@ -164,32 +195,89 @@ function threadHtml() {
   return `<div class="thread" id="thread">${rows}${pending}</div>`;
 }
 
+function homeHeroHtml() {
+  const blocked = !state.perms_ready;
+  const device = (state.settings && state.settings.device_name) || "this computer";
+  const on = linkStatusOn();
+  return `
+    <div class="home-hero">
+      <p class="hero-kicker">say "admeasy" or tap talk</p>
+      <p class="hero-try muted">try: "find wireless earbuds under ₹2000"</p>
+      <div class="mascot-hero" aria-hidden="true">
+        <img src="https://admeasy.ai/mascot.svg" width="120" height="120" alt="">
+      </div>
+      <div class="status-pill status-pill-center${on ? " on" : ""}">
+        <span class="dot ${on ? "on" : "off"}"></span>${esc(linkStatusLabel())}
+      </div>
+      <button type="button" class="btn btn-brand btn-block" id="talk-cta" ${blocked ? "disabled" : ""}>talk to admeasy</button>
+      <div class="device-status ${on ? "online" : "offline"}">
+        <img src="${hubIcon("01-computer")}" width="18" height="18" alt="">
+        <span class="device-status-name keep-case">${esc(device)}</span>
+        <span class="device-status-state">${on ? "online" : "offline"}</span>
+      </div>
+      <div class="suggestions" role="list">
+        ${QUICK_PROMPTS.map((p) =>
+    `<button type="button" class="suggestion-chip" data-suggest="${esc(p)}">${esc(p)}</button>`).join("")}
+      </div>
+    </div>`;
+}
+
+function wireComposer(blocked) {
+  const form = document.getElementById("say");
+  if (!form) return;
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const text = document.getElementById("text").value.trim();
+    if (!text) return;
+    await sendChat(text);
+  };
+  const talk = document.getElementById("talk-cta");
+  if (talk) {
+    talk.onclick = () => {
+      const area = document.getElementById("text");
+      if (area && !blocked) {
+        area.focus();
+        area.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    };
+  }
+  document.querySelectorAll("[data-suggest]").forEach((b) => {
+    b.onclick = async () => {
+      if (blocked) return;
+      await sendChat(b.dataset.suggest);
+    };
+  });
+}
+
+async function sendChat(text) {
+  bubbles.push({ role: "user", text });
+  const area = document.getElementById("text");
+  if (area) area.value = "";
+  draw();
+  try {
+    await api("/api/chat", { text });
+  } catch (err) {
+    bubbles.push({ role: "error", text: err.message });
+    draw();
+  }
+}
+
 function chat() {
   const blocked = !state.perms_ready;
+  const showHero = bubbles.length === 0 && !live;
   shell(`
-    ${threadHtml()}
+    ${showHero ? homeHeroHtml() : ""}
+    ${!showHero || live ? threadHtml() : ""}
     <form class="composer" id="say">
-      <textarea id="text" rows="1" placeholder="${blocked ? "grant permissions before i act" : "message"}" ${blocked ? "disabled" : ""}></textarea>
-      <button class="btn btn-primary" type="submit" ${blocked ? "disabled" : ""}>send</button>
-    </form>`, { chat: true });
+      <textarea id="text" rows="1" placeholder="${blocked ? "grant permissions before i act" : "message admeasy…"}" ${blocked ? "disabled" : ""}></textarea>
+      <button class="btn btn-brand" type="submit" ${blocked ? "disabled" : ""}>send</button>
+    </form>`, { chat: true, hero: showHero });
   const box = document.getElementById("thread");
   if (box) box.scrollTop = box.scrollHeight;
   document.querySelectorAll("[data-cmd]").forEach((b) => {
     b.onclick = () => openTerminal(b.dataset.cmd);
   });
-  const form = document.getElementById("say");
-  form.onsubmit = async (ev) => {
-    ev.preventDefault();
-    const text = document.getElementById("text").value.trim();
-    if (!text) return;
-    bubbles.push({ role: "user", text });
-    document.getElementById("text").value = "";
-    draw();
-    try { await api("/api/chat", { text }); } catch (err) {
-      bubbles.push({ role: "error", text: err.message });
-      draw();
-    }
-  };
+  wireComposer(blocked);
 }
 
 async function openTerminal(command) {
@@ -200,6 +288,65 @@ async function openTerminal(command) {
     bubbles.push({ role: "error", text: err.message });
     draw();
   }
+}
+
+function settingsScreen() {
+  const email = state.email || "";
+  const initial = email ? email.trim()[0].toUpperCase() : "?";
+  const ent = state.entitlements || {};
+  const usage = ent.usage || {};
+  const planName = ent.plan_name || ent.plan || "your plan";
+  const usageLine = usage.remaining == null
+    ? ""
+    : `${usage.remaining}${usage.limit == null ? "" : ` of ${usage.limit}`} computer actions left`;
+  shell(`
+    <h2 class="screen-title">settings</h2>
+    <p class="screen-lead muted">your account, assistant and connected apps</p>
+    <span class="section-label">account</span>
+    <div class="settings-card">
+      <div class="account-head">
+        <span class="avatar keep-case" aria-hidden="true">${esc(initial)}</span>
+        <div>
+          <div class="muted fine">signed in</div>
+          <div class="account-email keep-case">${esc(email || "signed out")}</div>
+        </div>
+      </div>
+      <div class="nav-chip-row">
+        <button type="button" class="nav-chip" data-go="activity">activity &amp; history</button>
+        <button type="button" class="nav-chip" data-go="employees">employees &amp; docs</button>
+        <button type="button" class="nav-chip" data-go="connections">your computers</button>
+      </div>
+      <button type="button" class="sign-out-btn" id="settings-out">sign out</button>
+    </div>
+    <span class="section-label">assistant</span>
+    <div class="settings-card">
+      <div class="settings-row">
+        <div>
+          <div class="plan-price">default assistant</div>
+          <p class="plan-blurb muted">this computer runs admeasy for your phone and whatsapp.</p>
+        </div>
+        <button type="button" class="btn btn-secondary" id="open-profile">manage</button>
+      </div>
+    </div>
+    <span class="section-label">pro plan</span>
+    <div class="settings-card">
+      <div class="plan-price keep-case">${esc(planName)}</div>
+      <p class="plan-blurb muted">${esc(usageLine || ent.tagline || "plan details sync when you are online.")}</p>
+      <button type="button" class="btn btn-light btn-block" style="margin-top:12px" data-go="plan">view billing</button>
+    </div>
+    <div class="settings-footer">
+      <button type="button" class="btn btn-brand btn-block" id="settings-done">done</button>
+    </div>`, { settings: true });
+  document.getElementById("settings-done").onclick = () => { screen = "chat"; draw(); };
+  document.getElementById("open-profile").onclick = () => { screen = "profile"; draw(); };
+  document.getElementById("settings-out").onclick = async () => {
+    await api("/api/logout", {});
+    screen = "chat";
+    await refresh();
+  };
+  document.querySelectorAll(".settings-card [data-go]").forEach((b) => {
+    b.onclick = () => { screen = b.dataset.go; draw(); };
+  });
 }
 
 function profile() {
@@ -456,7 +603,10 @@ function employees() {
     const el = document.getElementById("emp-list");
     if (!el) return;
     if (!rows.length) {
-      el.innerHTML = `<li class="muted">no employees yet.</li>`;
+      el.innerHTML = `<li><div class="empty-state">
+        <img src="${hubIcon("11-bot")}" width="40" height="40" alt="">
+        <p>no ai employees yet. create one below to get started.</p>
+      </div></li>`;
       return;
     }
     el.innerHTML = rows.map((e) =>
@@ -810,7 +960,7 @@ let paintKey = "";
 function draw() {
   if (!state) return;
   const key = JSON.stringify({
-    screen, menuOpen, bubbles, live,
+    screen, bubbles, live,
     needs: state.needs_invite, onb: state.onboarding_complete,
     online: state.online, email: state.email,
     folders: state.folders, caps: state.capabilities,
@@ -818,11 +968,13 @@ function draw() {
     perms: state.permission_detail, err: state.error,
     audit: (state.audit || []).length,
     ws: wsPick, wsf: wsFilter,
+    paused: state.settings && state.settings.paused,
   });
   if (key === paintKey && document.querySelector(".app")) return;
   paintKey = key;
   if (state.needs_invite) return invite();
   if (!state.onboarding_complete) return onboarding();
+  if (screen === "settings") return settingsScreen();
   if (screen === "profile") return profile();
   if (screen === "connections") return connections();
   if (screen === "plan") return plan();
