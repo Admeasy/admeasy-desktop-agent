@@ -24,7 +24,8 @@ def test_hello_wire_fields():
     assert set(hello) >= {"type", "version", "os_version", "capabilities", "permissions", "contract_version"}
     assert set(hello["permissions"]) <= {"screen", "accessibility", "full_disk", "automation"}
     assert "job_kinds" in caps
-    assert caps["contract_version"] == "0.5.0"
+    assert caps["contract_version"] == "0.5.1"
+    assert "tool_schemas" in caps
     assert "default_browser" in caps
     assert "profile_path" in caps["default_browser"]
 

@@ -10,6 +10,7 @@ from admeasy_desktop.job_kinds import JOB_KINDS
 
 @pytest.fixture
 def agent(monkeypatch, tmp_path):
+    monkeypatch.setenv("ADMEASY_LEGACY_HANDLERS", "1")
     monkeypatch.setattr(
         "admeasy_desktop.executors.screen.screenshot",
         lambda: {"screenshot_b64": "AA==", "size": [100, 100]},
@@ -55,6 +56,15 @@ def agent(monkeypatch, tmp_path):
     monkeypatch.setattr("admeasy_desktop.executors.messages_exec.run", lambda p: {"status": "ok", "result": {"messages": []}})
     monkeypatch.setattr("admeasy_desktop.executors.comms_exec.run", lambda p: {"status": "ok", "result": {"notifications": []}})
     monkeypatch.setattr("admeasy_desktop.executors.mail_exec.run", lambda p: {"status": "ok", "result": {"unread_inbox": 0}})
+
+    async def _screen(p, on_output, scaler):
+        return {"status": "ok", "result": {"screenshot_b64": "AA==", "size": [10, 10]}}
+
+    async def _notify(p):
+        return {"status": "ok", "result": {"shown": True}}
+
+    monkeypatch.setattr("admeasy_desktop.agent.dispatch_screen", _screen)
+    monkeypatch.setattr("admeasy_desktop.agent.dispatch_notify", _notify)
     return Agent(Settings())
 
 
@@ -78,6 +88,8 @@ async def test_dispatch_all_kinds(agent, tmp_path):
         "mail": {"op": "unread"},
         "status": {"domains": []},
         "signin": {"domain": "example.com", "timeout_s": 0.1, "poll_s": 0.05},
+        "screen": {"op": "screenshot"},
+        "notify": {"body": "ping"},
     }
     assert set(samples) == JOB_KINDS
     for kind, params in samples.items():
@@ -86,4 +98,4 @@ async def test_dispatch_all_kinds(agent, tmp_path):
 
 
 def test_job_kind_count():
-    assert len(JOB_KINDS) == 17
+    assert len(JOB_KINDS) == 19

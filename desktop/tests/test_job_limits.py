@@ -11,13 +11,13 @@ def test_every_job_gets_a_unique_key():
     assert job_idempotency_key("a", {}) != job_idempotency_key("b", {})
 
 
-def test_interactive_steps_get_short_defaults():
-    assert job_timeout_s("screenshot", {}, {}) == DEFAULT_TIMEOUT_S["screenshot"] < 60
-    assert job_timeout_s("open", {}, {}) <= 30 and job_timeout_s("cua", {}, {}) <= 60
+def test_per_tool_timeouts_have_generous_defaults():
+    assert job_timeout_s("screenshot", {}, {}) == DEFAULT_TIMEOUT_S["screenshot"] == 60
+    assert job_timeout_s("open", {}, {}) == 60 and job_timeout_s("cua", {}, {}) == 120
     assert job_timeout_s("open", {}, {"timeout_s": 90}) == 90
     assert job_timeout_s("open", {"timeout_s": 12}, {"timeout_s": 90}) == 12
     assert job_timeout_s("open", {}, {"timeout_s": "bad"}) == DEFAULT_TIMEOUT_S["open"]
-    assert job_timeout_s("unknown_kind", {}, {}) == 120
+    assert job_timeout_s("unknown_kind", {}, {}) == 600
 
 
 def test_store_is_bounded_and_drops_screenshots(tmp_path):

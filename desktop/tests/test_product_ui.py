@@ -51,9 +51,9 @@ def test_blocklist_beats_allowlist_and_trusted_mode():
     assert allowed.allow and not allowed.ask
 
 
-def test_autonomous_jobs_skip_prompts_by_denying_them():
+def test_autonomous_jobs_park_risky_commands_instead_of_auto_deny():
     risky = judge("shell", {"command": "rm notes.txt"}, "autopilot", ["/tmp"], autonomous=True)
-    assert not risky.allow
+    assert risky.allow and risky.ask
     quiet = judge("shell", {"command": "pwd"}, "autopilot", ["/tmp"], autonomous=True)
     assert quiet.allow and not quiet.ask
 

@@ -12,6 +12,8 @@ JOB_KINDS = frozenset(
         "files",
         "clipboard",
         "cua",
+        "screen",
+        "notify",
         "terminal",
         "cli",
         "app",
@@ -27,11 +29,12 @@ JOB_KINDS = frozenset(
 
 # Human-readable tool surface for hello.capabilities.tools (mirrors backend tool groups).
 TOOL_MANIFEST: list[dict] = [
-    {"group": "screen", "kinds": ["screenshot", "cua"]},
+    {"group": "general", "tools": "see capabilities.tool_schemas"},
+    {"group": "screen", "kinds": ["screenshot", "cua", "screen"]},
     {"group": "shell", "kinds": ["shell", "terminal", "cli"]},
     {"group": "browser", "kinds": ["browser", "open"]},
     {"group": "files", "kinds": ["files", "clipboard"]},
     {"group": "apps", "kinds": ["app", "ide"]},
     {"group": "messaging", "kinds": ["whatsapp", "messages", "mail", "comms"]},
-    {"group": "surface", "kinds": ["status", "signin"]},
+    {"group": "surface", "kinds": ["status", "signin", "notify"]},
 ]

@@ -90,10 +90,37 @@ class Browser:
     def __init__(self):
         self.pw = None
         self.ctx = None
+        self._cdp_browser = None
+        self._cdp_mode: str | None = None
         self._tab_sem = asyncio.Semaphore(3)
 
-    async def start_playwright(self):
+    async def _try_cdp(self, force: bool = False):
+        from .. import browser_cdp
+
         if self.ctx:
+            return True
+        if not force and not browser_cdp.detect_debug_port():
+            return False
+        from playwright.async_api import async_playwright
+
+        if not self.pw:
+            self.pw = await async_playwright().start()
+        port = browser_cdp.detect_debug_port() or browser_cdp.probe_process_list()
+        browser, ctx, mode = await browser_cdp.connect_playwright(self.pw, port)
+        if not browser or not ctx:
+            return False
+        self._cdp_browser = browser
+        self.ctx = ctx
+        self._cdp_mode = mode
+        log.info("browser cdp attach port=%s", port)
+        return True
+
+    async def start_playwright(self, *, prefer_cdp: bool = False):
+        if self.ctx:
+            return
+        if prefer_cdp and await self._try_cdp(force=True):
+            return
+        if await self._try_cdp(force=False):
             return
         from playwright.async_api import async_playwright
 
@@ -312,12 +339,28 @@ class Browser:
             return {"status": "error", "error": f"{type(e).__name__}: {e}"}
 
     async def run(self, p: dict) -> dict:
+        from .. import browser_cdp
+        from ..job_limits import BROWSER_MAX_TIMEOUT_S
+
         pool = int(p.get("tab_pool_size") or 0)
         if pool > 0:
             self._tab_sem = asyncio.Semaphore(max(1, min(pool, 12)))
+        limit = min(int(p.get("timeout_s") or 600), BROWSER_MAX_TIMEOUT_S)
+        p = {**p, "timeout_s": limit}
+        want_cdp = bool(p.get("cdp") or p.get("attach_cdp"))
+        if want_cdp or p.get("op") in STRUCTURED_OPS:
+            if not await self._try_cdp(force=want_cdp):
+                if want_cdp and not browser_cdp.detect_debug_port():
+                    hint = browser_cdp.relaunch_hint()
+                    return {
+                        "status": "needs_login",
+                        "error": "enable Chrome remote debugging to use your logged-in session",
+                        "result": {"reason": "cdp_unavailable", "cdp_hint": hint},
+                    }
         mode = _automation_mode(p)
-        if mode == "default_first":
+        if mode == "default_first" and not self.ctx:
             return await self.run_default_first(p)
+        await self.start_playwright(prefer_cdp=want_cdp)
         return await self.run_playwright(p)
 
     async def close(self):

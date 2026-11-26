@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0-beta.11 — 2026-11-26
+
+- Agent-driven desktop: typed outcome on every tunnel result (`ok`, `status`, `code`, `detail`, `job_id`).
+- Approvals park as `needs_approval` (no 300s auto-deny); native toast + resumable via `approval_result`.
+- Per-tool timeouts and ~15s heartbeats; removed global per-job wall clock on the agent loop.
+- General tools manifest (`terminal`, `files`, `screen`, `browser`, `notify`, `clipboard`) with JSON schemas in `hello`.
+- Browser CDP attach to the user's Chromium when remote debugging is enabled.
+- Legacy workflow handlers (`whatsapp`, `mail`, `cli`, …) behind `ADMEASY_LEGACY_HANDLERS=1`.
+- Contract version `0.5.1`.
+
 ## 0.5.0-beta.10 — 2026-10-31
 
 - CI: exclude `live_network` tests from default pytest (founder invite expiry on production); fix Windows PyInstaller test venv paths.

@@ -31,7 +31,11 @@ from .executors.browser import Browser
 from .executors import whatsapp_exec
 from .failure_detect import analyze as detect_failure
 from .job_kinds import JOB_KINDS, TOOL_MANIFEST
-from .job_limits import job_idempotency_key, job_timeout_s
+from .general_dispatch import dispatch_notify, dispatch_screen, legacy_handlers_enabled
+from .heartbeats import run_with_heartbeat
+from .job_limits import job_idempotency_key, tool_timeout_s
+from .results import finalize as finalize_result
+from .tool_schemas import GENERAL_TOOLS, LEGACY_KIND_GROUPS
 from .job_store import JobStore
 from .policy import judge
 from .safety import audit, folder_roots, gate_job, toggles
@@ -43,7 +47,6 @@ from . import agent_edge_overlay, cursor_overlay
 from .agent_session import AgentSession
 
 log = logging.getLogger("admeasy-desktop")
-APPROVAL_WAIT_S = 300
 
 
 class Agent:
@@ -70,6 +73,7 @@ class Agent:
         self._edge_task: asyncio.Task | None = None
         self.feed: list[dict] = []
         self.local_approvals: dict[str, dict] = {}
+        self._screen_scaler: list = []
 
     async def send(self, msg: dict) -> None:
         async with self.send_lock:
@@ -104,7 +108,10 @@ class Agent:
             "keep_awake": self.s.keep_awake,
             "job_kinds": sorted(JOB_KINDS),
             "tools": TOOL_MANIFEST,
-            "contract_version": "0.5.0",
+            "tool_schemas": GENERAL_TOOLS,
+            "legacy_handlers": legacy_handlers_enabled(),
+            "legacy_kind_groups": LEGACY_KIND_GROUPS,
+            "contract_version": "0.5.1",
             "default_browser": default_browser(),
             "plan": self._plan_caps(),
         }
@@ -195,11 +202,34 @@ class Agent:
                 "risk": str(verdict.risk)[:20],
             }
         )
+        pending = {
+            "action": str(kind)[:80],
+            "summary": str(verdict.reason)[:400],
+            "risk": str(verdict.risk)[:20],
+        }
+        await self.send(
+            {
+                "type": "needs_approval",
+                "job_id": jid,
+                "approval_id": aid,
+                "ok": False,
+                "status": "needs_approval",
+                "code": "needs_approval",
+                "detail": str(verdict.reason)[:800],
+                "pending_action": pending,
+            }
+        )
+        self.store.park_approval(jid, {"approval_id": aid, "pending_action": pending})
         try:
-            return bool(await asyncio.wait_for(fut, APPROVAL_WAIT_S + 5))
-        except asyncio.TimeoutError:
-            return False
+            from .notify import toast
+
+            toast("Admeasy", f"Approval needed: {str(verdict.reason)[:120]}")
+        except Exception:
+            pass
+        try:
+            return bool(await fut)
         finally:
+            self.store.pop_parked(jid)
             self.approvals.pop(aid, None)
             self.local_approvals.pop(aid, None)
             self.session.set_approval_wait(False)
@@ -272,7 +302,7 @@ class Agent:
                 if not v.allow:
                     res = {"status": "blocked", "error": v.reason}
                 elif v.ask and not await self.ask_user(jid, kind, v):
-                    res = {"status": "blocked", "error": "the user did not approve this action"}
+                    res = {"status": "failed", "error": "user denied this action", "result": {"reason": "denied"}}
                 elif (blocked := self._entitlement_block(kind, p)):
                     res = blocked
                 else:
@@ -285,15 +315,12 @@ class Agent:
                             "result": {"permissions_missing": miss, "reason": "permission_missing"},
                         }
                         if miss
-                        else normalize_result(
-                            kind,
-                            await asyncio.wait_for(self.dispatch(jid, kind, p), job_timeout_s(kind, job, p)),
-                        )
+                        else await self._dispatch_tool(jid, kind, p, job)
                     )
         except asyncio.CancelledError:
             res = {"status": "cancelled", "error": "stopped by the user"}
         except asyncio.TimeoutError:
-            res = {"status": "timeout", "error": "timed out", "result": {"reason": "job_timeout"}}
+            res = {"status": "failed", "error": "tool call timed out", "result": {"reason": "tool_timeout"}}
         except Exception as e:
             log.exception("job %s", jid)
             res = {"status": "error", "error": f"{type(e).__name__}: {e}"}
@@ -301,8 +328,8 @@ class Agent:
             self.session.job_finished(kind)
             self._track_objective(p, False)
             self._sync_edge_border()
-        res = normalize_result(kind, res)
-        if res.get("status") == "ok":
+        res = finalize_result(kind, jid, res)
+        if res.get("status") in ("ok", "done") or res.get("ok"):
             self.blocker = ""
         res = self._attach_objective(p, res)
         res = self._attach_evidence(jid, res)
@@ -313,10 +340,10 @@ class Agent:
             "kind": kind,
             "status": res.get("status"),
             "summary": summary,
-            "error": str(res.get("error") or "")[:180],
+            "error": str(res.get("error") or res.get("detail") or "")[:180],
             "autonomous": bool(p.get("autonomous") or p.get("scheduled") or p.get("reminder_id")),
         })
-        await self.send({"type": "result", "job_id": jid, **res})
+        await self.send({"type": "result", **res})
 
     def _entitlement_block(self, kind: str, params: dict) -> dict | None:
         """Stop a computer-use job the plan does not allow. Exempt jobs never call the API."""
@@ -406,13 +433,38 @@ class Agent:
         out["result"] = body
         return out
 
+    async def _dispatch_tool(self, jid: str, kind: str, p: dict, job: dict) -> dict:
+        limit = tool_timeout_s(kind, job, p)
+        coro = asyncio.wait_for(self.dispatch(jid, kind, p), limit)
+        raw = await run_with_heartbeat(jid, self.send, coro)
+        return normalize_result(kind, raw)
+
     async def dispatch(self, jid: str, kind: str, p: dict) -> dict:
         if kind not in JOB_KINDS:
             return {"status": "error", "error": f"unknown kind {kind}"}
+        if not legacy_handlers_enabled() and kind in (
+            "whatsapp",
+            "messages",
+            "mail",
+            "comms",
+            "app",
+            "ide",
+            "cli",
+        ):
+            return {
+                "status": "blocked",
+                "error": f"{kind} handler disabled; set ADMEASY_LEGACY_HANDLERS=1 or use general tools",
+                "result": {"reason": "legacy_disabled", "kind": kind},
+            }
         loop = asyncio.get_running_loop()
 
         async def on_output(chunk: str) -> None:
             await self.step(jid, chunk, p.get("objective_id"))
+
+        if kind == "screen":
+            return await dispatch_screen(p, on_output if p.get("stream") else None, self._screen_scaler)
+        if kind == "notify":
+            return await dispatch_notify(p)
 
         if kind == "status":
             return {"status": "ok", "result": surface_collect(p)}
@@ -543,7 +595,8 @@ class Agent:
                 self.queue.task_done()
 
     async def _emit_cancelled(self, job_id: str) -> None:
-        await self.send({"type": "result", "job_id": job_id, "status": "cancelled", "error": "stopped by the user"})
+        payload = finalize_result("cancel", job_id, {"status": "cancelled", "error": "stopped by the user"})
+        await self.send({"type": "result", **payload})
 
     def cancel_all(self) -> None:
         self.session.reset()

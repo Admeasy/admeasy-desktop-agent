@@ -21,6 +21,8 @@ async def test_three_shell_jobs_in_sequence(monkeypatch, tmp_path):
                                       "params": {"command": f"echo job{i}"}}))
             while True:
                 m = json.loads(await ws.recv())
+                if m.get("type") == "heartbeat":
+                    continue
                 if m["type"] == "result" and m["job_id"] == f"j{i}":
                     results.append(m)
                     break
@@ -39,5 +41,5 @@ async def test_three_shell_jobs_in_sequence(monkeypatch, tmp_path):
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
     assert len(results) == 3
-    assert all(r["status"] == "ok" for r in results)
+    assert all(r["status"] in ("ok", "done") for r in results)
     assert "job0" in results[0]["result"]["output"]

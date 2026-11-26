@@ -39,6 +39,7 @@ async def test_idempotency_key_skips_second_dispatch(tmp_path):
     job = {"job_id": "j1", "kind": "status", "params": {"idempotency_key": "idem", "domains": []}}
     await a.run_job(job)
     await a.run_job({**job, "job_id": "j2"})
-    assert len(out) == 2
-    assert out[0]["result"] == out[1]["result"]
-    assert out[0]["status"] == "ok"
+    results = [m for m in out if m.get("type") == "result"]
+    assert len(results) == 2
+    assert results[0]["result"] == results[1]["result"]
+    assert results[0]["status"] in ("ok", "done")

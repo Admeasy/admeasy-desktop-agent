@@ -1,6 +1,7 @@
 """Normalize executor payloads into honest tunnel result messages for the backend."""
 from __future__ import annotations
 
+from .outcome import enrich_result_payload
 from .typed_status import LEGACY_ERR, LEGACY_OK, normalize_status
 
 TERMINAL = frozenset(
@@ -42,7 +43,7 @@ def normalize(kind: str, out: dict | None) -> dict:
         res["error"] = str(reason)
     elif status in LEGACY_ERR or status in ("error", "timeout", "blocked", "rate_limited", "captcha"):
         res["error"] = res.get("error") or status.replace("_", " ")
-    elif status in ("needs_login", "needs_human", "permission_missing"):
+    elif status in ("needs_login", "needs_human", "permission_missing", "needs_approval"):
         res["error"] = res.get("error") or status.replace("_", " ")
 
     if status == "ok" and kind in ("shell", "terminal", "cli"):
@@ -55,3 +56,9 @@ def normalize(kind: str, out: dict | None) -> dict:
             res["status"] = "error"
             res["error"] = str(out["error"])
     return res
+
+
+def finalize(kind: str, job_id: str, res: dict) -> dict:
+    """Apply normalize then attach typed outcome fields."""
+    normalized = normalize(kind, res)
+    return enrich_result_payload(job_id, normalized)

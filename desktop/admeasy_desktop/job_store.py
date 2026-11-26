@@ -63,3 +63,18 @@ class JobStore:
             self._data["pending_results"] = []
             self._save()
             return pending
+
+    def park_approval(self, job_id: str, payload: dict) -> None:
+        with self._lock:
+            parked = self._data.setdefault("parked_approvals", {})
+            parked[str(job_id)] = payload
+            self._save()
+
+    def pop_parked(self, job_id: str) -> dict | None:
+        with self._lock:
+            parked = self._data.get("parked_approvals") or {}
+            return parked.pop(str(job_id), None)
+
+    def get_parked(self, job_id: str) -> dict | None:
+        with self._lock:
+            return (self._data.get("parked_approvals") or {}).get(str(job_id))

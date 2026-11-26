@@ -221,7 +221,7 @@ async def test_allowed_computer_use_still_runs(tmp_path):
     agent.send = send
     await agent.run_job({"job_id": "j1", "kind": "shell", "params": {"command": "echo hi"}})
     result = next(m for m in sent if m.get("type") == "result")
-    assert result["status"] == "ok"
+    assert result["status"] in ("ok", "done")
     assert "hi" in result["result"]["output"]
 
 
@@ -334,7 +334,8 @@ async def test_status_does_not_spend_the_cursor_pool(tmp_path):
     agent.send = send
     await agent.run_job({"job_id": "j-status", "kind": "status", "params": {"domains": []}})
     assert calls == []
-    assert sent and sent[0]["status"] == "ok"
+    results = [m for m in sent if m.get("type") == "result"]
+    assert results and results[0]["status"] in ("ok", "done")
 
 
 def test_feature_copy_names_the_upgrade_site():

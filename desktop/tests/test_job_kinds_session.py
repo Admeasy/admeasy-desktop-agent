@@ -28,6 +28,8 @@ async def _session(monkeypatch, tmp_path, task_specs: list[dict], *, approval_mo
             await ws.send(json.dumps({"type": "task", **spec}))
         while len(results) < len(task_specs):
             m = json.loads(await ws.recv())
+            if m.get("type") in ("heartbeat", "needs_approval", "step"):
+                continue
             if m.get("type") == "approval_request":
                 await ws.send(json.dumps({"type": "approval_result", "approval_id": m["approval_id"], "allow": True}))
                 continue
@@ -131,8 +133,8 @@ async def test_job_kind_twice_in_one_session(kind, monkeypatch, tmp_path):
     results = await _session(monkeypatch, tmp_path, specs)
     assert len(results) == 2
     assert results[0]["job_id"].startswith(kind) or kind in results[0]["job_id"]
-    assert results[0]["status"] == "ok"
-    assert results[1]["status"] == "ok"
+    assert results[0]["status"] in ("ok", "done")
+    assert results[1]["status"] in ("ok", "done")
     if kind == "clipboard":
         assert results[1]["result"]["text"] == "clip"
     if kind == "files":
@@ -177,6 +179,8 @@ async def test_cancel_all_cancels_queued_job(monkeypatch, tmp_path):
         proceed.set()
         while len(got) < 2:
             m = json.loads(await ws.recv())
+            if m.get("type") in ("heartbeat", "step", "needs_approval"):
+                continue
             if m.get("type") == "result":
                 got.append(m)
         results_ready.set()
@@ -193,5 +197,7 @@ async def test_cancel_all_cancels_queued_job(monkeypatch, tmp_path):
         with pytest.raises(asyncio.CancelledError):
             await tunnel
     statuses = {m["job_id"]: m["status"] for m in got}
-    assert statuses.get("queued") == "cancelled"
-    assert statuses.get("slow") in ("cancelled", "ok", "error", "blocked")
+    queued_msg = next(m for m in got if m["job_id"] == "queued")
+    assert queued_msg["status"] == "failed"
+    assert queued_msg.get("code") == "cancelled"
+    assert statuses.get("slow") in ("cancelled", "failed", "ok", "done", "error", "blocked")

@@ -152,7 +152,12 @@ async def run(p: dict, on_output: OnOutput | None = None) -> dict:
         )
         assert proc.stdout
         chunks: list[str] = []
-        deadline = asyncio.get_event_loop().time() + min(int(p.get("timeout_s") or 120), 900)
+        from ..job_limits import MAX_TOOL_TIMEOUT_S, SHELL_DEFAULT_TIMEOUT_S
+
+        deadline = asyncio.get_event_loop().time() + min(
+            int(p.get("timeout_s") or SHELL_DEFAULT_TIMEOUT_S),
+            MAX_TOOL_TIMEOUT_S,
+        )
         while True:
             if asyncio.get_event_loop().time() > deadline:
                 proc.kill()

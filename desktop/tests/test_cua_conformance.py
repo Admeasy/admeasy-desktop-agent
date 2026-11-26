@@ -60,6 +60,6 @@ async def test_instagram_flow_six_distinct_screenshots(monkeypatch):
 
 def test_contract_version_handshake():
     caps = Agent(Settings()).capabilities()
-    assert caps["contract_version"] == "0.5.0"
+    assert caps["contract_version"] == "0.5.1"
     fixture = json.loads(FIXTURE.read_text())
     assert fixture["contract_version"] == caps["contract_version"]

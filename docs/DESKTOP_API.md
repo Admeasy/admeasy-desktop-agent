@@ -1,63 +1,132 @@
-# Desktop API (Lightsail contract)
-
-Canonical spec lives in **admeasy-ai-assistant** (`docs/DESKTOP_API.md` at commit `caeef71`). This copy is derived from the live OpenAPI at `ADMEASY_BACKEND/openapi.json` so the desktop repo stays testable without cloning the private assistant repo.
+# Desktop API (tunnel + tools)
 
 Default backend: `https://admeasy-backend.6h5y8j39qxdcg.ap-south-1.cs.amazonlightsail.com`
 
-## Auth
+Contract version in `hello.capabilities.contract_version`: **`0.5.1`**
 
-| Flow | Endpoint | Notes |
-|------|----------|--------|
-| Google (desktop) | `GET /auth/google/start?desktop_port=&nonce=&invite=` | Redirects to loopback with JWTs |
-| Refresh | `POST /auth/refresh` | `{refresh_token}` |
-| Profile | `GET /auth/me` | Bearer JWT |
+## Handshake (`hello`)
 
-Production rejects bare `user_id` query params; send **Bearer** JWT (or `token` query only where documented for legacy web).
+Desktop → server on WSS connect:
 
-## Chat
+```json
+{
+  "type": "hello",
+  "version": "0.5.0-beta.11",
+  "contract_version": "0.5.1",
+  "capabilities": {
+    "job_kinds": ["..."],
+    "tools": ["..."],
+    "tool_schemas": ["terminal", "files", "screen", "browser", "notify", "clipboard"],
+    "legacy_handlers": false,
+    "tool_schemas": [ { "name": "terminal", "kind": "terminal", "parameters": { ... } }, ... ]
+  }
+}
+```
 
-| Action | Endpoint |
-|--------|----------|
-| List threads | `GET /conversations?limit=` |
-| History | `GET /conversations/{id}/messages?limit=` |
-| Send + stream | `WSS /ws/session?token=<JWT>&client=desktop&conversation_id=` (optional) |
+Set `ADMEASY_LEGACY_HANDLERS=1` to re-enable per-app handlers (`whatsapp`, `mail`, `cli`, `app`, `ide`, …).
 
-WebSocket client messages: `{"type":"text","text":"..."}`.
+## Task → outcome (every job)
 
-Server events handled by the desktop UI: `session`, `token`, `done`, `revision`, `tool_call`, `error`, `approval_required`, `attachment`.
+Server → desktop:
 
-## Devices (phone → your computer)
+```json
+{ "type": "task", "job_id": "uuid", "kind": "terminal", "params": { "op": "run", "command": "pwd" } }
+```
 
-| Action | Endpoint |
-|--------|----------|
-| Register (signed-in) | `POST /devices/register` |
-| Pair code (JWT) | `POST /devices/pair-codes` |
-| Redeem (installer) | `POST /devices/pair/redeem` `{code,name,platform,os_version}` |
-| Tunnel | `WSS /devices/tunnel` headers `Authorization: Bearer <device_token>`, `X-Device-Id` |
-| Tunnel push | `{type:"reminder", text:...}` → native toast |
+Desktop → server (terminal, always includes outcome fields):
 
-## Reminders & push
+```json
+{
+  "type": "result",
+  "job_id": "uuid",
+  "ok": true,
+  "status": "done",
+  "code": "ok",
+  "detail": "",
+  "result": { "exit_code": 0, "output": "/Users/you\n" }
+}
+```
 
-| Action | Endpoint |
-|--------|----------|
-| Create | `POST /reminders` `{text, at, client:"desktop"}` |
-| List | `GET /reminders?limit=` |
-| Cancel | `DELETE /reminders/{id}` |
-| VAPID | `GET /push/vapid-public-key` |
-| Register subscription | `POST /push/web` `{endpoint, keys, client:"desktop"}` |
+### `status` enum
 
-## Parity screens (3-dot menu)
+| status | ok | Meaning |
+|--------|-----|---------|
+| `done` | true | Tool finished successfully |
+| `failed` | false | Error, timeout, cancel, deny |
+| `needs_auth` | false | Login/captcha (`code`: `needs_login`, `captcha`, …) |
+| `needs_approval` | false | Parked until user approves (see below) |
+| `rate_limited` | false | Plan usage cap |
+| `blocked` | false | Policy/hard block/onboarding |
 
-| Screen | Backend |
-|--------|---------|
-| Plan | `GET /entitlements/me`, `GET /billing/status` |
-| Employees | `GET/POST /employees`, `GET /employees/{id}`, pause/resume |
-| Automations | `POST /me/triggers`, `POST /triggers/{id}` (invoke) |
-| Connectors | `GET /oauth/connections`, MCP routes under `/mcp/*` |
-| Activity | `GET /activity?limit=` |
+Optional: `connect_url`, `artifacts`, `approval_id`, `pending_action`.
 
-## Gaps (desktop-side notes)
+Exceptions in the agent map to `failed` with `detail` = exception text (no canned replacement).
 
-- **admeasy-ai-assistant** repo was not readable from the cloud agent GitHub token; `brand-tokens.json` is vendored from the live **admeasy.ai** web bundle and should be replaced with the assistant repo file when available.
-- Employee **run** is via **trigger invoke** (`POST /triggers/{id}`), not a dedicated “run employee” POST.
-- MCP connect flows still open in the system browser from the phone/web; the desktop lists catalog/installed only.
+## Approvals (resumable)
+
+1. Desktop sends `approval_request` (unchanged).
+2. Desktop sends **`needs_approval`** (non-terminal progress):
+
+```json
+{
+  "type": "needs_approval",
+  "job_id": "uuid",
+  "approval_id": "uuid",
+  "ok": false,
+  "status": "needs_approval",
+  "code": "needs_approval",
+  "detail": "run: rm …",
+  "pending_action": { "action": "shell", "summary": "...", "risk": "high" }
+}
+```
+
+3. Server/user replies on tunnel:
+
+```json
+{ "type": "approval_result", "approval_id": "uuid", "allow": true }
+```
+
+4. Job continues; final `type: result` uses the outcome contract.
+
+There is **no** approval wall-clock auto-deny on the desktop.
+
+## Heartbeats
+
+During long tool calls (~15s interval):
+
+```json
+{ "type": "heartbeat", "job_id": "uuid", "elapsed_s": 45.2 }
+```
+
+Backend should extend server-side wait while heartbeats arrive (mirror LangGraph long runs).
+
+## Tool manifest (general tools)
+
+| Tool | `kind` | Notes |
+|------|--------|--------|
+| `terminal` | `terminal` | Persistent PTY per `session_id`; default `timeout_s` 600 |
+| `files` | `files` | User-shared folders only |
+| `screen` | `screen` | `screenshot` / `act` (CUA); also `screenshot` + `cua` kinds |
+| `browser` | `browser` | CDP attach when `--remote-debugging-port` present; else Playwright profile; browser call up to 1800s |
+| `notify` | `notify` | Native toast |
+| `clipboard` | `clipboard` | get/set |
+
+JSON Schema definitions: `hello.capabilities.tool_schemas` (see `admeasy_desktop/tool_schemas.py`).
+
+## Browser CDP
+
+- Detect: `127.0.0.1:9222` (or `ADMEASY_CDP_PORT`).
+- Login wall: `status: needs_auth`, `result.connect_url` or `cdp_hint` for relaunch with `--remote-debugging-port=9222`.
+- Never export cookies/passwords.
+
+## Backend agent checklist
+
+1. Bind tools from `tool_schemas`; send `kind` + `params` on `task`.
+2. Handle `heartbeat` to avoid tunnel timeouts.
+3. On `needs_approval`, surface UI and later send `approval_result` (same as LangGraph `interrupt` + `Command(resume=...)`).
+4. Parse `ok` + `status` + `code` + `detail` on every `result`.
+5. Use `contract_version` `0.5.1` feature detection (outcome fields required).
+
+## Auth, chat, devices
+
+See prior sections in this repo (`/devices/tunnel`, pair/redeem, chat WSS) — unchanged for beta.11 except outcome shape on device results.

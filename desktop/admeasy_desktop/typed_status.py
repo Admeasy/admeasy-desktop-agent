@@ -19,6 +19,7 @@ STATUSES = frozenset(
         "denied",
         "needs_permission",
         "cancelled",
+        "needs_approval",
     }
 )
 
@@ -34,6 +35,8 @@ def normalize_status(status: str | None) -> str:
         return "ok"
     if s == "needs_permission":
         return "permission_missing"
+    if s == "needs_approval":
+        return "needs_approval"
     if s in LEGACY_ERR:
         return "error" if s == "failed" else s
     if s not in STATUSES:

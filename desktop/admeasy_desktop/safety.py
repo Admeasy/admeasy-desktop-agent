@@ -14,7 +14,7 @@ from . import config
 # Kinds that drive the machine. status and signin stay available so the phone
 # can see why the computer is waiting.
 GATED_KINDS = frozenset({
-    "shell", "terminal", "cli", "files", "screenshot", "cua", "browser", "clipboard",
+    "shell", "terminal", "cli", "files", "screenshot", "screen", "cua", "browser", "clipboard", "notify",
     "open", "app", "messages", "whatsapp", "mail", "comms", "ide",
 })
 

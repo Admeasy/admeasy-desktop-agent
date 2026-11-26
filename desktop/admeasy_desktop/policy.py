@@ -2,7 +2,7 @@
 
 Three layers, in order:
   1. HARD BLOCK  never runs, in any mode (disk wipe, shutdown, credential stores, the agent's own secrets).
-  2. APPROVAL    risky actions pause and ask the user (answered from the phone or the desktop window). No answer in 300 s = no.
+  2. APPROVAL    risky actions pause and ask the user (phone or desktop). No answer parks the job as needs_approval (resumable).
   3. FREE        read-only and routine UI actions run without asking.
 Modes: autopilot (default) never asks for opening, clicking, typing or navigating; it asks only before a destructive
 shell/file step, an install, or a final send/call. ask_risky, ask_always and trusted as before.
@@ -193,9 +193,6 @@ def judge(kind: str, params: dict, mode: str, roots, allowlist=None, blocklist=N
 
     A blocklist entry always denies, including in trusted mode and even when the same
     command is also on the allowlist. An allowlist entry skips the approval prompt.
-    Autonomous or scheduled jobs cannot run anything that would have asked.
+    Autonomous/scheduled jobs that need approval park (verdict.ask stays true); the agent returns needs_approval.
     """
-    verdict = _judge_core(kind, params, mode, roots, allowlist, blocklist)
-    if autonomous and verdict.ask:
-        return Verdict(False, reason="scheduled jobs cannot run commands that need approval", risk="blocked")
-    return verdict
+    return _judge_core(kind, params, mode, roots, allowlist, blocklist)
